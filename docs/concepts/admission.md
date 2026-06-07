@@ -20,3 +20,10 @@ slots are occupied.
 
 `wait_limit=None` permits indefinite queue waiting. Request/response systems should
 usually use a finite limit.
+
+
+## Immediate admission
+
+`slot_now()` and `execute_now()` never enter the waiting room. They either acquire a
+slot immediately or raise `BulkheadSaturatedError`. Existing FIFO waiters always keep
+priority, so immediate admission cannot jump ahead of queued work.

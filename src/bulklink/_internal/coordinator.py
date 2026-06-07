@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from time import monotonic
+from typing import NoReturn
 
 from bulklink._internal.cancellation import complete_cleanup
 from bulklink._internal.models import RuntimeCounters, WaitEntry, WaitState
@@ -76,23 +77,14 @@ class AdmissionCoordinator:
         loop = self._bind_to_running_loop()
 
         async with self._mutex:
-            if self._closed:
-                self._counters.closed_before_queue_total += 1
-                raise BulkheadClosedError(label=self._label)
+            self._ensure_open_locked()
 
-            if self._in_flight < self._parallelism and not self._waiters:
+            if self._can_admit_directly_locked():
                 self._grant_directly()
                 return
 
             if len(self._waiters) >= self._waiting_room:
-                self._counters.saturated_total += 1
-                raise BulkheadSaturatedError(
-                    label=self._label,
-                    in_flight=self._in_flight,
-                    waiting=len(self._waiters),
-                    parallelism=self._parallelism,
-                    waiting_room=self._waiting_room,
-                )
+                self._raise_saturated_locked()
 
             entry = WaitEntry(
                 future=loop.create_future(),
@@ -144,6 +136,37 @@ class AdmissionCoordinator:
             raise asyncio.CancelledError
 
         raise RuntimeError(f"unexpected terminal wait state: {state.name}")
+
+    async def enter_now(self) -> None:
+        """Admit only when capacity is available without joining the waiting room."""
+        self._bind_to_running_loop()
+
+        async with self._mutex:
+            self._ensure_open_locked()
+
+            if self._can_admit_directly_locked():
+                self._grant_directly()
+                return
+
+            self._raise_saturated_locked()
+
+    def _ensure_open_locked(self) -> None:
+        if self._closed:
+            self._counters.closed_before_queue_total += 1
+            raise BulkheadClosedError(label=self._label)
+
+    def _can_admit_directly_locked(self) -> bool:
+        return self._in_flight < self._parallelism and not self._waiters
+
+    def _raise_saturated_locked(self) -> NoReturn:
+        self._counters.saturated_total += 1
+        raise BulkheadSaturatedError(
+            label=self._label,
+            in_flight=self._in_flight,
+            waiting=len(self._waiters),
+            parallelism=self._parallelism,
+            waiting_room=self._waiting_room,
+        )
 
     async def _await_terminal_state(self, entry: WaitEntry) -> WaitState:
         if self._wait_limit is None:

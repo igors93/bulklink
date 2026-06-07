@@ -59,8 +59,18 @@ class AsyncBulkhead:
         return self._coordinator.wait_limit
 
     def slot(self) -> SlotContext:
-        """Return an async context manager for one execution slot."""
-        return SlotContext(self._coordinator)
+        """Return a context manager that may wait for one execution slot."""
+        return SlotContext(
+            admit=self._coordinator.enter,
+            release=self._coordinator.release,
+        )
+
+    def slot_now(self) -> SlotContext:
+        """Return a context manager that rejects instead of entering the queue."""
+        return SlotContext(
+            admit=self._coordinator.enter_now,
+            release=self._coordinator.release,
+        )
 
     async def execute(
         self,
@@ -68,8 +78,18 @@ class AsyncBulkhead:
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
-        """Execute one async callable while holding one slot."""
+        """Execute one async callable after waiting for a slot when necessary."""
         async with self.slot():
+            return await operation(*args, **kwargs)
+
+    async def execute_now(
+        self,
+        operation: Callable[P, Awaitable[T]],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        """Execute one async callable only when a slot is immediately available."""
+        async with self.slot_now():
             return await operation(*args, **kwargs)
 
     def __call__(

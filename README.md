@@ -51,6 +51,12 @@ Or:
 result = await payments.execute(payment_api.send, order)
 ```
 
+Reject instead of waiting when immediate capacity is required:
+
+```python
+result = await payments.execute_now(payment_api.send, order)
+```
+
 Or decorate an async function:
 
 ```python

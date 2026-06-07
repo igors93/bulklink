@@ -12,7 +12,7 @@ def test_public_names_do_not_copy_relinker_vocabulary() -> None:
         if not name.startswith("_") and callable(member)
     }
 
-    assert {"execute", "slot", "status", "close"} <= public_methods
+    assert {"execute", "execute_now", "slot", "slot_now", "status", "close"} <= public_methods
     assert "run" not in public_methods
     assert "run_async" not in public_methods
     assert "snapshot" not in public_methods

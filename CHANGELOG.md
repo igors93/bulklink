@@ -2,6 +2,17 @@
 
 All notable changes to Bulklink will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- `slot_now()` and `execute_now()` for admission without waiting-room entry.
+- Exact admission and waiting-room accounting metrics.
+
+### Changed
+
+- Split closed-state and cancellation metrics by lifecycle stage.
+
 ## 0.1.0 - 2026-06-07
 
 ### Added

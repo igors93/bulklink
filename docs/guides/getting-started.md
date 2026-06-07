@@ -34,6 +34,24 @@ The slot is released whether the call succeeds, raises, or the task is cancelled
 response = await payments.execute(payment_client.send, order)
 ```
 
+## Reject instead of waiting
+
+Use immediate admission when the caller should never enter the waiting room:
+
+```python
+response = await payments.execute_now(payment_client.send, order)
+```
+
+For a protected block:
+
+```python
+async with payments.slot_now():
+    response = await payment_client.send(order)
+```
+
+Both forms raise `BulkheadSaturatedError` when a slot is not immediately available.
+They do not consume waiting-room capacity and never overtake existing waiters.
+
 ## Protect a function
 
 ```python

@@ -27,8 +27,10 @@ AsyncBulkhead(
 
 Methods:
 
-- `slot()` returns an async context manager;
-- `execute(operation, *args, **kwargs)` protects one async call;
+- `slot()` returns a context manager that may wait for capacity;
+- `slot_now()` returns a context manager that rejects instead of waiting;
+- `execute(operation, *args, **kwargs)` protects one async call and may wait;
+- `execute_now(operation, *args, **kwargs)` protects one async call without queueing;
 - decorating an async function protects each invocation;
 - `status()` returns `BulkheadStatus`;
 - `close()` rejects queued and future operations.

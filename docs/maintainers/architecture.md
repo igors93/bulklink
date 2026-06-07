@@ -33,7 +33,7 @@ and counters.
 
 ### SlotContext
 
-Owns exactly one successful admission/release lifecycle.
+Owns exactly one successful admission/release lifecycle through injected admission and release actions.
 
 ### BulkheadStatus
 
@@ -44,7 +44,7 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 1. `in_flight` never exceeds `parallelism`.
 2. waiting count never exceeds `waiting_room`.
 3. queued work is admitted FIFO.
-4. new arrivals never overtake existing waiters.
+4. new arrivals, including immediate admission, never overtake existing waiters.
 5. each granted slot is released or transferred exactly once.
 6. timeout and cancellation cannot leak slots.
 7. protected user code is invoked at most once per Bulklink call.

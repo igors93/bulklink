@@ -62,3 +62,15 @@ async def test_exit_without_enter_is_harmless() -> None:
     await slot.__aexit__(None, None, None)
 
     assert (await gate.status()).in_flight == 0
+
+
+async def test_same_immediate_slot_context_cannot_be_entered_twice() -> None:
+    gate = AsyncBulkhead(label="immediate-guard", parallelism=1)
+    slot = gate.slot_now()
+
+    await slot.__aenter__()
+    try:
+        with pytest.raises(RuntimeError):
+            await slot.__aenter__()
+    finally:
+        await slot.__aexit__(None, None, None)
