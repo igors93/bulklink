@@ -228,9 +228,59 @@ async def test_collective_failure_does_not_skip_other_bulkheads(
     assert error.failures[0].label == "broken"
     assert error.failures[0].error_type == "RuntimeError"
     assert error.failures[0].message == "simulated close failure"
+    assert error.__cause__ is None
     assert registry.is_closed
     assert (await healthy.status()).is_drained
     assert not (await broken.status()).is_closed
+
+
+async def test_collective_failure_message_is_bounded_and_single_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = BulkheadRegistry()
+    broken = registry.create("broken", parallelism=1)
+
+    async def fail_close() -> None:
+        raise RuntimeError("secret\n" + ("x" * 1_000))
+
+    monkeypatch.setattr(broken, "close", fail_close)
+
+    with pytest.raises(BulkheadRegistryOperationError) as captured:
+        await registry.close_all()
+
+    error = captured.value
+    failure = error.failures[0]
+
+    assert error.__cause__ is None
+    assert "\n" not in failure.message
+    assert "\r" not in failure.message
+    assert "\\n" in failure.message
+    assert len(failure.message) <= 500
+    assert failure.message.endswith("...")
+
+
+async def test_collective_failure_survives_broken_exception_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = BulkheadRegistry()
+    broken = registry.create("broken", parallelism=1)
+
+    class BrokenStringError(RuntimeError):
+        def __str__(self) -> str:
+            raise RuntimeError("string conversion failed")
+
+    async def fail_close() -> None:
+        raise BrokenStringError()
+
+    monkeypatch.setattr(broken, "close", fail_close)
+
+    with pytest.raises(BulkheadRegistryOperationError) as captured:
+        await registry.close_all()
+
+    failure = captured.value.failures[0]
+    assert failure.error_type == "BrokenStringError"
+    assert failure.message == "BrokenStringError"
+    assert captured.value.__cause__ is None
 
 
 def test_registry_failure_metadata_is_immutable_and_bounded() -> None:

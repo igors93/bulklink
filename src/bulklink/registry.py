@@ -17,6 +17,8 @@ from bulklink.status import BulkheadStatus
 
 T = TypeVar("T")
 
+_MAX_FAILURE_MESSAGE_LENGTH = 500
+
 
 @dataclass(frozen=True, slots=True)
 class BulkheadRegistryFailure:
@@ -187,6 +189,22 @@ class BulkheadRegistry:
             return tuple(self._bulkheads.items())
 
 
+def _safe_failure_message(error: BaseException) -> str:
+    try:
+        message = str(error)
+    except BaseException:
+        message = type(error).__name__
+
+    sanitized = message.replace("\r", "\\r").replace("\n", "\\n")
+    if not sanitized:
+        sanitized = type(error).__name__
+
+    if len(sanitized) <= _MAX_FAILURE_MESSAGE_LENGTH:
+        return sanitized
+
+    return f"{sanitized[: _MAX_FAILURE_MESSAGE_LENGTH - 3]}..."
+
+
 async def _run_collective(
     operation: str,
     items: tuple[tuple[str, AsyncBulkhead], ...],
@@ -201,17 +219,14 @@ async def _run_collective(
     )
     values: list[T] = []
     failures: list[BulkheadRegistryFailure] = []
-    first_error: BaseException | None = None
 
     for (label, _), result in zip(items, raw_results, strict=True):
         if isinstance(result, BaseException):
-            if first_error is None:
-                first_error = result
             failures.append(
                 BulkheadRegistryFailure(
                     label=label,
                     error_type=type(result).__name__,
-                    message=str(result),
+                    message=_safe_failure_message(result),
                 )
             )
         else:
@@ -222,6 +237,6 @@ async def _run_collective(
             operation=operation,
             failures=tuple(failures),
         )
-        raise error from first_error
+        raise error from None
 
     return tuple(values)
