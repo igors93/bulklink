@@ -92,6 +92,25 @@ await payments.close_and_wait()
 `close_and_wait()` stops new admission, rejects queued work, and waits for operations
 already running to finish. Cancelling the caller does not cancel protected operations.
 
+
+## Observe state transitions
+
+```python
+from bulklink import BulkheadEvent
+
+
+def record_event(event: BulkheadEvent) -> None:
+    print(event.kind.value, event.in_flight, event.waiting)
+
+
+payments.add_event_handler(record_event)
+```
+
+Handlers are synchronous, run outside the coordinator lock, and receive immutable
+metadata only. They never receive operation arguments, results, or exceptions. Handler
+failures are reported through the event loop exception handler without changing
+bulkhead state.
+
 ## Designed to coexist with Relinker
 
 Bulklink and Relinker solve different stages:

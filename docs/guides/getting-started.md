@@ -93,6 +93,29 @@ await payments.wait_closed()
 `close()` rejects queued and future operations but never cancels work that already
 holds a slot. Multiple tasks may await `wait_closed()` independently.
 
+
+## Observe lifecycle events
+
+```python
+from bulklink import BulkheadEvent
+
+
+def log_event(event: BulkheadEvent) -> None:
+    print(event.kind.value, event.in_flight, event.waiting)
+
+
+payments.add_event_handler(log_event)
+```
+
+Handlers are synchronous and run outside the internal lock. Keep them fast, or forward
+the event to a queue with a non-blocking operation. Remove a handler by identity:
+
+```python
+payments.remove_event_handler(log_event)
+```
+
+Events contain no arguments, results, or exceptions from the protected operation.
+
 ## Protect a function
 
 ```python

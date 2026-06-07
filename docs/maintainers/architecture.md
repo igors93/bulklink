@@ -10,11 +10,13 @@ src/bulklink/
 ├── __init__.py             stable root imports
 ├── bulkhead.py             public facade
 ├── errors.py               public exception hierarchy
+├── events.py               immutable event contract
 ├── status.py               immutable observable state
 ├── typing.py               shared type parameters
 └── _internal/
     ├── cancellation.py     protected critical cleanup
     ├── coordinator.py      admission, FIFO handoff, counters, closing
+    ├── events.py           synchronous isolated event dispatch
     ├── models.py           private waiter and counter models
     ├── slot.py             context-manager lifecycle
     └── validation.py       deterministic validation
@@ -30,6 +32,12 @@ Exposes user-facing usage styles but stores no mutable concurrency state directl
 
 Owns the lock, FIFO queue, in-flight count, event-loop binding, slot handoff, closing,
 draining signal, and counters.
+
+### EventDispatcher
+
+Stores a stable tuple of synchronous handlers. The coordinator creates immutable event
+snapshots while holding its lock, then dispatches them only after the lock has been
+released. Handler failures are isolated and reported to the event loop.
 
 ### SlotContext
 
@@ -56,6 +64,9 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 12. One slot context cannot run overlapping admission or release lifecycles.
 13. Drain completion is signalled only after closing and when `in_flight` reaches zero.
 14. Cancelling one shutdown waiter cannot affect active work or other shutdown waiters.
+15. Event handlers never execute while the coordinator lock is held.
+16. Event payloads never contain protected operation arguments, results, or exceptions.
+17. Handler failures cannot change capacity, queue state, or admission outcomes.
 
 ## Why direct slot transfer?
 
@@ -69,3 +80,10 @@ The coordinator owns one event-loop-bound signal that is set exactly once, after
 admission has closed and all allocated slots have been returned. Waiting callers use
 that signal directly, so shutdown requires no polling and cancellation of one waiter
 does not alter shared state.
+
+## Why synchronous event handlers?
+
+Synchronous handlers avoid background task ownership, shutdown races, and unobserved
+coroutine failures inside the library. Applications that need asynchronous export can
+forward immutable events into their own queue with `put_nowait()`, keeping lifecycle
+control with the application.

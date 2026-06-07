@@ -7,6 +7,7 @@ from functools import wraps
 
 from bulklink._internal.coordinator import AdmissionCoordinator
 from bulklink._internal.slot import SlotContext
+from bulklink.events import BulkheadEventHandler
 from bulklink.status import BulkheadStatus
 from bulklink.typing import P, T
 
@@ -57,6 +58,14 @@ class AsyncBulkhead:
     def wait_limit(self) -> float | None:
         """Return the waiting deadline in seconds."""
         return self._coordinator.wait_limit
+
+    def add_event_handler(self, handler: BulkheadEventHandler) -> None:
+        """Register one synchronous observability handler."""
+        self._coordinator.add_event_handler(handler)
+
+    def remove_event_handler(self, handler: BulkheadEventHandler) -> None:
+        """Remove one previously registered observability handler."""
+        self._coordinator.remove_event_handler(handler)
 
     def slot(self) -> SlotContext:
         """Return a context manager that may wait for one execution slot."""

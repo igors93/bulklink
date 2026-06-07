@@ -62,3 +62,40 @@ Caller cancellation is not a rejection and is therefore excluded from
 - `average_wait_seconds` is the average queue wait of operations eventually admitted;
 - `longest_wait_seconds` is the longest admitted queue wait;
 - `cumulative_wait_seconds` is the sum used to calculate the average.
+
+## Events
+
+Bulklink can emit immutable lifecycle events without depending on a metrics or tracing
+framework:
+
+```python
+from bulklink import BulkheadEvent
+
+
+def observe(event: BulkheadEvent) -> None:
+    metrics.increment(f"bulklink.{event.kind.value}")
+
+
+payments.add_event_handler(observe)
+```
+
+Event kinds include admission, queue entry, saturation, expiration, cancellation,
+abandonment after admission, release, closing, closed-state rejection, and draining.
+Each event contains only bulkhead metadata:
+
+- label and event kind;
+- wall-clock occurrence time;
+- configured and current capacity;
+- whether the operation came from the queue;
+- queue wait duration when applicable;
+- number of queued operations affected by closing.
+
+Operation arguments, return values, and exceptions are never included.
+
+Handlers must be synchronous and should return quickly. They are invoked in registration
+order outside the coordinator lock. Use a non-blocking queue operation such as
+`asyncio.Queue.put_nowait()` when forwarding events to asynchronous processing.
+
+Adding the same handler object twice is idempotent. Removing a missing handler is also
+idempotent. All handler failures are sent to `loop.call_exception_handler()` and do not
+change admission, queue, or capacity state.

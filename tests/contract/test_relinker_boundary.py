@@ -13,6 +13,7 @@ def test_public_names_do_not_copy_relinker_vocabulary() -> None:
     }
 
     assert {
+        "add_event_handler",
         "execute",
         "execute_now",
         "execute_within",
@@ -23,6 +24,7 @@ def test_public_names_do_not_copy_relinker_vocabulary() -> None:
         "close",
         "close_and_wait",
         "wait_closed",
+        "remove_event_handler",
     } <= public_methods
     assert "run" not in public_methods
     assert "run_async" not in public_methods

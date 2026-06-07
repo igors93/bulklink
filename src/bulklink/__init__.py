@@ -7,11 +7,15 @@ from bulklink.errors import (
     BulkheadSaturatedError,
     BulklinkError,
 )
+from bulklink.events import BulkheadEvent, BulkheadEventHandler, BulkheadEventKind
 from bulklink.status import BulkheadStatus
 
 __all__ = [
     "AsyncBulkhead",
     "BulkheadClosedError",
+    "BulkheadEvent",
+    "BulkheadEventHandler",
+    "BulkheadEventKind",
     "BulkheadQueueTimeoutError",
     "BulkheadSaturatedError",
     "BulkheadStatus",

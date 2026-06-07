@@ -29,6 +29,7 @@ class WaitEntry:
     future: asyncio.Future[WaitState]
     enqueued_at: float
     state: WaitState = WaitState.WAITING
+    waited_seconds: float | None = None
 
     def transition_to(self, state: WaitState) -> bool:
         """Move from waiting to one terminal state exactly once."""

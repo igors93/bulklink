@@ -20,6 +20,7 @@ async def assert_bulkhead_consistent(bulkhead: Any) -> None:
 
         for entry in waiters:
             assert entry.state is WaitState.WAITING
+            assert entry.waited_seconds is None
             assert not entry.future.done()
 
         numeric_counters = (
