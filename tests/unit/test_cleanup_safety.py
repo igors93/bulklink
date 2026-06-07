@@ -39,3 +39,23 @@ async def test_cleanup_returns_its_result_without_cancellation() -> None:
         return "finished"
 
     assert await complete_cleanup(cleanup()) == "finished"
+
+
+async def test_cleanup_exception_takes_precedence_over_pending_cancellation() -> None:
+    started = asyncio.Event()
+    allow_failure = asyncio.Event()
+
+    async def cleanup() -> None:
+        started.set()
+        await allow_failure.wait()
+        raise RuntimeError("cleanup failed")
+
+    task = asyncio.create_task(complete_cleanup(cleanup()))
+    await started.wait()
+
+    task.cancel()
+    await asyncio.sleep(0)
+    allow_failure.set()
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        await task

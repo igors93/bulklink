@@ -109,7 +109,7 @@ class AdmissionCoordinator:
             state = await self._await_terminal_state(entry)
         except asyncio.TimeoutError as error:
             try:
-                state = await complete_cleanup(self._settle_waiter(entry, WaitState.EXPIRED))
+                state = await complete_cleanup(self._expire_waiter(entry))
             except asyncio.CancelledError:
                 await complete_cleanup(self._cancel_waiter(entry))
                 raise
@@ -161,56 +161,74 @@ class AdmissionCoordinator:
             self._in_flight,
         )
 
-    async def _settle_waiter(
-        self,
-        entry: WaitEntry,
-        requested_state: WaitState,
-    ) -> WaitState:
-        """Settle one queued entry if it is still waiting."""
-        if requested_state not in {
-            WaitState.CANCELLED,
-            WaitState.EXPIRED,
-            WaitState.CLOSED,
-        }:
-            raise ValueError("requested_state must end queue waiting")
-
+    async def _expire_waiter(self, entry: WaitEntry) -> WaitState:
+        """Expire one entry if it is still waiting."""
         async with self._mutex:
             if entry.state is not WaitState.WAITING:
                 return entry.state
-
-            self._remove_waiter_locked(entry)
-            changed = entry.transition_to(requested_state)
-            if not changed:
-                raise RuntimeError("wait entry changed state while coordinator lock was held")
-
-            if requested_state is WaitState.CANCELLED:
-                self._counters.cancelled_total += 1
-                entry.future.cancel()
-            elif requested_state is WaitState.EXPIRED:
-                self._counters.expired_total += 1
-                entry.future.set_result(WaitState.EXPIRED)
-            else:
-                self._counters.closed_total += 1
-                entry.future.set_result(WaitState.CLOSED)
-
-            return requested_state
+            return self._finish_waiter_locked(
+                entry,
+                WaitState.EXPIRED,
+                remove_from_queue=True,
+            )
 
     async def _cancel_waiter(self, entry: WaitEntry) -> WaitState:
         """Cancel waiting or return a slot already transferred to this entry."""
         async with self._mutex:
             if entry.state is WaitState.WAITING:
-                self._remove_waiter_locked(entry)
-                changed = entry.transition_to(WaitState.CANCELLED)
-                if not changed:
-                    raise RuntimeError("wait entry changed state while coordinator lock was held")
-                self._counters.cancelled_total += 1
-                entry.future.cancel()
-                return WaitState.CANCELLED
+                return self._finish_waiter_locked(
+                    entry,
+                    WaitState.CANCELLED,
+                    remove_from_queue=True,
+                )
 
             if entry.state is WaitState.ADMITTED:
                 self._release_locked(mark_finished=False)
 
             return entry.state
+
+    def _finish_waiter_locked(
+        self,
+        entry: WaitEntry,
+        state: WaitState,
+        *,
+        remove_from_queue: bool,
+    ) -> WaitState:
+        """Move one waiting entry to a terminal state under the coordinator lock."""
+        if state is WaitState.WAITING:
+            raise ValueError("a waiting entry requires a terminal state")
+        if entry.state is not WaitState.WAITING:
+            raise RuntimeError("only waiting entries can be completed")
+
+        if remove_from_queue:
+            self._remove_waiter_locked(entry)
+
+        if not entry.transition_to(state):
+            raise RuntimeError("waiting entry could not transition to a terminal state")
+
+        if state is WaitState.ADMITTED:
+            waited = max(0.0, monotonic() - entry.enqueued_at)
+            self._counters.admitted_total += 1
+            self._counters.admitted_from_queue_total += 1
+            self._counters.cumulative_wait_seconds += waited
+            self._counters.longest_wait_seconds = max(
+                self._counters.longest_wait_seconds,
+                waited,
+            )
+            entry.future.set_result(WaitState.ADMITTED)
+        elif state is WaitState.CANCELLED:
+            self._counters.cancelled_total += 1
+            entry.future.cancel()
+        elif state is WaitState.EXPIRED:
+            self._counters.expired_total += 1
+            entry.future.set_result(WaitState.EXPIRED)
+        elif state is WaitState.CLOSED:
+            self._counters.closed_total += 1
+            entry.future.set_result(WaitState.CLOSED)
+        else:
+            raise RuntimeError(f"unsupported terminal wait state: {state.name}")
+
+        return state
 
     def _remove_waiter_locked(self, entry: WaitEntry) -> None:
         try:
@@ -232,26 +250,15 @@ class AdmissionCoordinator:
         if mark_finished:
             self._counters.finished_total += 1
 
-        while self._waiters:
+        if self._waiters:
             entry = self._waiters.popleft()
-            if entry.state is not WaitState.WAITING:
-                raise RuntimeError("terminal wait entry remained in the FIFO queue")
             if entry.future.done():
                 raise RuntimeError("waiting entry future completed before admission")
-
-            changed = entry.transition_to(WaitState.ADMITTED)
-            if not changed:
-                raise RuntimeError("waiting entry could not transition to ADMITTED")
-
-            waited = max(0.0, monotonic() - entry.enqueued_at)
-            self._counters.admitted_total += 1
-            self._counters.admitted_from_queue_total += 1
-            self._counters.cumulative_wait_seconds += waited
-            self._counters.longest_wait_seconds = max(
-                self._counters.longest_wait_seconds,
-                waited,
+            self._finish_waiter_locked(
+                entry,
+                WaitState.ADMITTED,
+                remove_from_queue=False,
             )
-            entry.future.set_result(WaitState.ADMITTED)
             # Direct transfer keeps _in_flight unchanged.
             return
 
@@ -269,15 +276,11 @@ class AdmissionCoordinator:
 
             while self._waiters:
                 entry = self._waiters.popleft()
-                if entry.state is not WaitState.WAITING:
-                    raise RuntimeError("terminal wait entry remained in the FIFO queue")
-
-                changed = entry.transition_to(WaitState.CLOSED)
-                if not changed:
-                    raise RuntimeError("waiting entry could not transition to CLOSED")
-
-                self._counters.closed_total += 1
-                entry.future.set_result(WaitState.CLOSED)
+                self._finish_waiter_locked(
+                    entry,
+                    WaitState.CLOSED,
+                    remove_from_queue=False,
+                )
 
     async def status(self) -> BulkheadStatus:
         """Build an immutable status report under the coordinator lock."""
