@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+import inspect
+
+from bulklink import AsyncBulkhead
+
+
+def test_public_names_do_not_copy_relinker_vocabulary() -> None:
+    public_methods = {
+        name
+        for name, member in inspect.getmembers(AsyncBulkhead)
+        if not name.startswith("_") and callable(member)
+    }
+
+    assert {"execute", "slot", "status", "close"} <= public_methods
+    assert "run" not in public_methods
+    assert "run_async" not in public_methods
+    assert "snapshot" not in public_methods
+    assert "retry" not in public_methods

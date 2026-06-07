@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+import math
+
+import pytest
+
+from bulklink import AsyncBulkhead
+
+
+@pytest.mark.parametrize("value", ["", "   ", 12, None])
+def test_label_must_be_non_empty_string(value: object) -> None:
+    with pytest.raises(ValueError):
+        AsyncBulkhead(label=value, parallelism=1)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 1.5, "2"])
+def test_parallelism_must_be_positive_integer(value: object) -> None:
+    with pytest.raises(ValueError):
+        AsyncBulkhead(label="x", parallelism=value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [-1, True, 1.5, "2"])
+def test_waiting_room_must_be_non_negative_integer(value: object) -> None:
+    with pytest.raises(ValueError):
+        AsyncBulkhead(label="x", parallelism=1, waiting_room=value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [0, -1, True, math.inf, math.nan, "1"])
+def test_wait_limit_must_be_positive_finite_number(value: object) -> None:
+    with pytest.raises(ValueError):
+        AsyncBulkhead(label="x", parallelism=1, wait_limit=value)  # type: ignore[arg-type]
+
+
+def test_label_is_normalized_and_properties_are_exposed() -> None:
+    gate = AsyncBulkhead(
+        label="  payments  ",
+        parallelism=2,
+        waiting_room=3,
+        wait_limit=1,
+    )
+
+    assert gate.label == "payments"
+    assert gate.parallelism == 2
+    assert gate.waiting_room == 3
+    assert gate.wait_limit == 1.0
