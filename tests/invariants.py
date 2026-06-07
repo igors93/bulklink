@@ -14,7 +14,8 @@ async def assert_bulkhead_consistent(bulkhead: Any) -> None:
         waiters = tuple(coordinator._waiters)
         in_flight = coordinator._in_flight
 
-        assert 0 <= in_flight <= coordinator.parallelism
+        assert in_flight >= 0
+        assert coordinator.parallelism > 0
         assert 0 <= len(waiters) <= coordinator.waiting_room
         assert len({id(entry) for entry in waiters}) == len(waiters)
 
@@ -22,6 +23,9 @@ async def assert_bulkhead_consistent(bulkhead: Any) -> None:
             assert entry.state is WaitState.WAITING
             assert entry.waited_seconds is None
             assert not entry.future.done()
+
+        if waiters:
+            assert in_flight >= coordinator.parallelism
 
         numeric_counters = (
             counters.admitted_total,
@@ -53,7 +57,7 @@ async def assert_bulkhead_consistent(bulkhead: Any) -> None:
         assert counters.admitted_total == accounted_admissions
         assert counters.admitted_from_queue_total <= counters.admitted_total
 
-        assert in_flight <= counters.peak_in_flight <= coordinator.parallelism
+        assert in_flight <= counters.peak_in_flight
         assert len(waiters) <= counters.peak_waiting <= coordinator.waiting_room
         assert counters.cumulative_wait_seconds >= 0
         assert counters.longest_wait_seconds >= 0

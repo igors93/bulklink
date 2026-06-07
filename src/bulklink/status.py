@@ -41,13 +41,23 @@ class BulkheadStatus:
         return max(0, self.parallelism - self.in_flight)
 
     @property
+    def capacity_excess(self) -> int:
+        """Return active operations above the current resized capacity."""
+        return max(0, self.in_flight - self.parallelism)
+
+    @property
+    def is_over_capacity(self) -> bool:
+        """Return True while a capacity reduction is draining excess active work."""
+        return self.capacity_excess > 0
+
+    @property
     def is_saturated(self) -> bool:
         """Return True when no execution slot is immediately available."""
         return self.free_slots == 0
 
     @property
     def utilization(self) -> float:
-        """Return the fraction of execution capacity currently allocated."""
+        """Return allocated work divided by current capacity; it may exceed 1 after shrinking."""
         return self.in_flight / self.parallelism
 
     @property

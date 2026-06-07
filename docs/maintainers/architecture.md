@@ -32,8 +32,8 @@ Exposes user-facing usage styles but stores no mutable concurrency state directl
 
 ### AdmissionCoordinator
 
-Owns the lock, FIFO queue, in-flight count, event-loop binding, slot handoff, closing,
-draining signal, and counters.
+Owns the lock, FIFO queue, in-flight count, dynamic capacity, event-loop binding, slot
+handoff, closing, draining signal, and counters.
 
 ### EventDispatcher
 
@@ -58,7 +58,7 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 
 ## Invariants
 
-1. `in_flight` never exceeds `parallelism`.
+1. `in_flight` may exceed `parallelism` only while a reduction drains existing work.
 2. waiting count never exceeds `waiting_room`.
 3. queued work is admitted FIFO.
 4. new arrivals, including immediate admission, never overtake existing waiters.
@@ -76,6 +76,14 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 16. Event payloads never contain protected operation arguments, results, or exceptions.
 17. Handler failures cannot change capacity, queue state, or admission outcomes.
 18. Capacity assessment is read-only and deterministic for the same snapshot.
+19. Capacity increases admit existing waiters before new arrivals.
+20. Capacity reductions never cancel admitted work or hand off replacements early.
+
+## Why gradual capacity reduction?
+
+Revoking a slot from running user code would require cancelling work the bulkhead does
+not own. After shrinking, releases reduce excess active work until the new limit is
+reached. Only then can a release transfer capacity to the next FIFO waiter.
 
 ## Why direct slot transfer?
 

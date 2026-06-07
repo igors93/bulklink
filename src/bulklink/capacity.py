@@ -22,6 +22,7 @@ class CapacityFindingCode(str, Enum):
 
     CLOSED_WITH_ACTIVE_WORK = "closed_with_active_work"
     EXECUTION_FULL = "execution_full"
+    ACTIVE_WORK_ABOVE_CAPACITY = "active_work_above_capacity"
     WAITING_ROOM_NEAR_CAPACITY = "waiting_room_near_capacity"
     WAITING_ROOM_FULL = "waiting_room_full"
     UNBOUNDED_QUEUE_WAIT = "unbounded_queue_wait"

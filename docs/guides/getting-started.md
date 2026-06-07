@@ -129,6 +129,16 @@ for finding in report.findings:
 The report is a read-only interpretation of current state and cumulative counters. It
 does not resize the bulkhead or create monitoring tasks.
 
+## Change capacity at runtime
+
+```python
+await payments.resize(20)
+```
+
+Increasing capacity admits the oldest queued operations immediately. Reducing capacity
+keeps active operations running and temporarily pauses replacement admission until the
+new limit is reached. Resizing a closed bulkhead raises `BulkheadClosedError`.
+
 ## Protect a function
 
 ```python

@@ -101,6 +101,21 @@ def _add_current_pressure_findings(
     if not status.is_saturated:
         return
 
+    if status.is_over_capacity:
+        findings.append(
+            CapacityFinding(
+                code=CapacityFindingCode.ACTIVE_WORK_ABOVE_CAPACITY,
+                severity=(
+                    CapacitySeverity.WARNING if status.waiting > 0 else CapacitySeverity.NOTICE
+                ),
+                message=("Active work is above the current capacity after a reduction."),
+                recommendation=(
+                    "Allow existing operations to finish; Bulklink will not admit replacements "
+                    "until active work reaches the resized limit."
+                ),
+            )
+        )
+
     if status.waiting_room > 0 and status.waiting >= status.waiting_room:
         findings.append(
             CapacityFinding(
@@ -115,21 +130,22 @@ def _add_current_pressure_findings(
         )
         return
 
-    findings.append(
-        CapacityFinding(
-            code=CapacityFindingCode.EXECUTION_FULL,
-            severity=(
-                CapacitySeverity.WARNING
-                if status.waiting > 0 or status.waiting_room == 0
-                else CapacitySeverity.NOTICE
-            ),
-            message="All execution slots are currently allocated.",
-            recommendation=(
-                "Observe whether the condition persists before increasing parallelism; "
-                "the protected dependency may already be at its safe limit."
-            ),
+    if not status.is_over_capacity:
+        findings.append(
+            CapacityFinding(
+                code=CapacityFindingCode.EXECUTION_FULL,
+                severity=(
+                    CapacitySeverity.WARNING
+                    if status.waiting > 0 or status.waiting_room == 0
+                    else CapacitySeverity.NOTICE
+                ),
+                message="All execution slots are currently allocated.",
+                recommendation=(
+                    "Observe whether the condition persists before increasing parallelism; "
+                    "the protected dependency may already be at its safe limit."
+                ),
+            )
         )
-    )
 
     if status.waiting_room > 0 and status.queue_utilization >= _QUEUE_NEAR_CAPACITY:
         findings.append(

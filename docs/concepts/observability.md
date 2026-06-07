@@ -12,7 +12,9 @@ background metrics task; applications decide how and when to export it.
 - `in_flight` is the number of execution slots currently allocated;
 - `waiting` is the number of operations currently in the FIFO waiting room;
 - `free_slots` is the immediately available execution capacity;
-- `utilization` is `in_flight / parallelism`;
+- `capacity_excess` is active work above a newly reduced capacity;
+- `is_over_capacity` identifies the temporary drain after shrinking;
+- `utilization` is `in_flight / parallelism` and may exceed `1.0` after shrinking;
 - `queue_utilization` is `waiting / waiting_room`, or zero when waiting is disabled;
 - `peak_in_flight` and `peak_waiting` are historical high-water marks;
 - `is_drained` is true only after closing when no active or queued work remains.
@@ -80,7 +82,7 @@ payments.add_event_handler(observe)
 ```
 
 Event kinds include admission, queue entry, saturation, expiration, cancellation,
-abandonment after admission, release, closing, closed-state rejection, and draining.
+abandonment after admission, release, resizing, closing, closed-state rejection, and draining.
 Each event contains only bulkhead metadata:
 
 - label and event kind;
@@ -88,7 +90,8 @@ Each event contains only bulkhead metadata:
 - configured and current capacity;
 - whether the operation came from the queue;
 - queue wait duration when applicable;
-- number of queued operations affected by closing.
+- number of queued operations affected by closing or resizing;
+- previous capacity for resize events.
 
 Operation arguments, return values, and exceptions are never included.
 

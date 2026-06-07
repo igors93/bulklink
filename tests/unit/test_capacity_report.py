@@ -239,6 +239,21 @@ def test_large_waiting_room_is_reported_as_advisory() -> None:
     assert report.severity is CapacitySeverity.NOTICE
 
 
+def test_over_capacity_after_resize_is_reported_without_generic_full_finding() -> None:
+    report = assess_capacity(
+        make_status(parallelism=1, in_flight=2),
+        wait_limit=1.0,
+        assessed_at=1.0,
+    )
+
+    assert finding_codes(report) == [
+        CapacityFindingCode.ACTIVE_WORK_ABOVE_CAPACITY,
+    ]
+    assert report.severity is CapacitySeverity.NOTICE
+    assert report.status.capacity_excess == 1
+    assert report.status.is_over_capacity
+
+
 def test_closed_reports_distinguish_draining_from_drained() -> None:
     draining = assess_capacity(
         make_status(is_closed=True, in_flight=1),

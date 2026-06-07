@@ -11,6 +11,7 @@ All notable changes to Bulklink will be documented in this file.
 - `wait_closed()` and `close_and_wait()` for graceful asynchronous draining.
 - Immutable lifecycle events with synchronous isolated handlers.
 - Immutable capacity reports with conservative diagnostic findings.
+- Dynamic execution capacity with FIFO-safe `resize()`.
 - Exact admission and waiting-room accounting metrics.
 
 ### Changed

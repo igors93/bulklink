@@ -54,6 +54,10 @@ A waiting room is reported as unusually large when it has at least 100 places an
 at least 20 times larger than execution capacity. This is an advisory observation,
 not an automatic instruction to reduce the queue.
 
+After a capacity reduction, the report distinguishes temporary active work above the
+new limit from ordinary execution saturation. Existing work is allowed to drain rather
+than being cancelled.
+
 ## Interpretation limits
 
 Reports use cumulative history rather than a rolling time window. An application that

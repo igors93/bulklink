@@ -78,6 +78,41 @@ class AdmissionCoordinator:
         """Return the shortest limit allowed for one queued admission."""
         return resolve_wait_limit(self._wait_limit, requested)
 
+    async def resize(self, parallelism: int) -> None:
+        """Change execution capacity without cancelling admitted operations."""
+        requested = require_positive_integer("parallelism", parallelism)
+        self._bind_to_running_loop()
+        error: Exception | None = None
+
+        async with self._mutex:
+            if self._closed:
+                error = BulkheadClosedError(label=self._label)
+                events: tuple[BulkheadEvent, ...] = ()
+            elif requested == self._parallelism:
+                events = ()
+            else:
+                previous = self._parallelism
+                occurred_at = time()
+                affected_waiters = min(
+                    len(self._waiters),
+                    max(0, requested - self._in_flight),
+                )
+                self._parallelism = requested
+                resized = self._event_locked(
+                    BulkheadEventKind.RESIZED,
+                    occurred_at=occurred_at,
+                    previous_parallelism=previous,
+                    affected_waiters=affected_waiters,
+                )
+                admitted = self._admit_available_waiters_locked(
+                    occurred_at=occurred_at,
+                )
+                events = (resized, *admitted)
+
+        self._event_dispatcher.dispatch(events)
+        if error is not None:
+            raise error
+
     def _bind_to_running_loop(self) -> asyncio.AbstractEventLoop:
         loop = asyncio.get_running_loop()
         if self._owner_loop is None:
@@ -233,13 +268,38 @@ class AdmissionCoordinator:
         )
 
     def _grant_directly_locked(self) -> BulkheadEvent:
-        self._in_flight += 1
+        self._allocate_capacity_locked()
         self._counters.admitted_total += 1
+        return self._event_locked(BulkheadEventKind.ADMITTED)
+
+    def _allocate_capacity_locked(self) -> None:
+        self._in_flight += 1
         self._counters.peak_in_flight = max(
             self._counters.peak_in_flight,
             self._in_flight,
         )
-        return self._event_locked(BulkheadEventKind.ADMITTED)
+
+    def _admit_available_waiters_locked(
+        self,
+        *,
+        occurred_at: float,
+    ) -> tuple[BulkheadEvent, ...]:
+        events: list[BulkheadEvent] = []
+        while self._waiters and self._in_flight < self._parallelism:
+            entry = self._waiters.popleft()
+            if entry.future.done():
+                raise RuntimeError("waiting entry future completed before admission")
+
+            self._allocate_capacity_locked()
+            _, event = self._finish_waiter_locked(
+                entry,
+                WaitState.ADMITTED,
+                remove_from_queue=False,
+                occurred_at=occurred_at,
+            )
+            events.append(event)
+
+        return tuple(events)
 
     async def _expire_waiter(self, entry: WaitEntry) -> WaitState:
         """Expire one entry if it is still waiting."""
@@ -408,7 +468,7 @@ class AdmissionCoordinator:
         *,
         occurred_at: float | None = None,
     ) -> tuple[BulkheadEvent, ...]:
-        if self._waiters:
+        if self._waiters and self._in_flight <= self._parallelism:
             entry = self._waiters.popleft()
 
             if entry.future.done():
@@ -542,6 +602,7 @@ class AdmissionCoordinator:
         from_queue: bool = False,
         waited_seconds: float | None = None,
         affected_waiters: int = 0,
+        previous_parallelism: int | None = None,
     ) -> BulkheadEvent:
         return BulkheadEvent(
             kind=kind,
@@ -555,4 +616,5 @@ class AdmissionCoordinator:
             from_queue=from_queue,
             waited_seconds=waited_seconds,
             affected_waiters=affected_waiters,
+            previous_parallelism=previous_parallelism,
         )

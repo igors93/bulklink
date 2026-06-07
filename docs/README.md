@@ -13,6 +13,7 @@
 - [Admission and FIFO queueing](concepts/admission.md)
 - [Cancellation safety](concepts/cancellation.md)
 - [Capacity diagnostics](concepts/capacity-diagnostics.md)
+- [Dynamic capacity](concepts/dynamic-capacity.md)
 - [Status and metrics](concepts/observability.md)
 
 ## Reference

@@ -43,6 +43,7 @@ Methods:
 - decorating an async function protects each invocation;
 - `status()` returns `BulkheadStatus`;
 - `capacity_report()` returns an immutable `CapacityReport`;
+- `resize(parallelism)` changes open-bulkhead capacity without cancelling active work;
 - `close()` rejects queued and future operations;
 - `wait_closed()` waits for closing and active-work drainage;
 - `close_and_wait()` performs both shutdown steps;
@@ -56,6 +57,11 @@ extend the configured `wait_limit` and apply only to waiting-room time.
 is closed and has no active work. Cancelling one waiter does not cancel active work or
 prevent other waiters from completing.
 
+`resize()` accepts a positive integer. Increases admit queued work in FIFO order.
+Reductions never cancel active work and may temporarily make `utilization` exceed 1.0.
+Resizing to the current value is a no-op, and resizing after closing raises
+`BulkheadClosedError`.
+
 ## Private modules
 
 Modules under `bulklink._internal` are implementation details without compatibility
@@ -65,6 +71,7 @@ guarantees.
 
 `BulkheadEvent` is immutable. `BulkheadEventKind` identifies the lifecycle transition,
 and `BulkheadEventHandler` describes a synchronous callback that returns `None`.
+Resize events expose `previous_parallelism` and the current `parallelism`.
 
 Handlers execute outside internal locks and in registration order. Duplicate
 registration and removal of missing handlers are idempotent. Unsupported asynchronous

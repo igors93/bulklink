@@ -36,3 +36,12 @@ and the requested value. A per-call limit can never extend the bulkhead default.
 
 The limit starts after the operation enters the waiting room and ends when a slot is
 admitted. Time spent inside the protected operation is not included.
+
+
+## Dynamic execution capacity
+
+`resize(new_parallelism)` changes capacity while preserving FIFO order. Increases
+immediately admit the oldest waiters when new slots become available. Reductions do
+not cancel active work; releases first drain any temporary excess above the new limit.
+
+See [Dynamic capacity](dynamic-capacity.md).

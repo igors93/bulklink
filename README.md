@@ -81,7 +81,8 @@ For each bulkhead:
 4. a waiting operation is rejected when `wait_limit` expires;
 5. exceptions and task cancellation release capacity safely;
 6. `close()` rejects queued and future operations without interrupting active work;
-7. `wait_closed()` waits until all active operations have released their slots.
+7. `wait_closed()` waits until all active operations have released their slots;
+8. `resize()` changes capacity without cancelling active work or bypassing FIFO order.
 
 ## Graceful shutdown
 
@@ -125,6 +126,16 @@ The report combines the current snapshot with cumulative admission history. It i
 immutable, conservative with small samples, and never changes the bulkhead
 configuration.
 
+## Change capacity safely
+
+```python
+await payments.resize(20)
+```
+
+Increasing capacity admits queued operations in FIFO order. Reducing capacity never
+cancels active work; existing operations drain naturally before admission resumes at
+the new limit.
+
 ## Designed to coexist with Relinker
 
 Bulklink and Relinker solve different stages:
@@ -157,6 +168,7 @@ python -m pip install -e ".[dev]"
 - [Using Bulklink with Relinker](docs/guides/with-relinker.md)
 - [Production checklist](docs/guides/production-checklist.md)
 - [Capacity diagnostics](docs/concepts/capacity-diagnostics.md)
+- [Dynamic capacity](docs/concepts/dynamic-capacity.md)
 - [Architecture](docs/maintainers/architecture.md)
 
 ## License

@@ -144,6 +144,10 @@ class AsyncBulkhead:
         current = await self.status()
         return assess_capacity(current, wait_limit=self.wait_limit)
 
+    async def resize(self, parallelism: int, /) -> None:
+        """Change execution capacity without cancelling active operations."""
+        await self._coordinator.resize(parallelism)
+
     async def close(self) -> None:
         """Reject queued and future operations without interrupting active work."""
         await self._coordinator.close()

@@ -21,3 +21,6 @@ Important behavioral contracts:
 - handler failures do not change protected operation outcomes or capacity state;
 - event payloads exclude operation arguments, results, and exceptions;
 - capacity reports are immutable and never alter admission or configuration.
+- capacity increases preserve FIFO order;
+- capacity reductions never cancel active work;
+- closed bulkheads cannot be resized or reopened.

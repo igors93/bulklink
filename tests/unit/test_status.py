@@ -22,6 +22,8 @@ async def test_initial_status() -> None:
     assert current.in_flight == 0
     assert current.waiting == 0
     assert current.free_slots == 2
+    assert current.capacity_excess == 0
+    assert not current.is_over_capacity
     assert not current.is_saturated
     assert current.utilization == 0.0
     assert current.queue_utilization == 0.0
@@ -86,6 +88,32 @@ async def test_queue_utilization_is_zero_without_a_waiting_room() -> None:
     gate = AsyncBulkhead(label="no-queue", parallelism=1, waiting_room=0)
 
     assert (await gate.status()).queue_utilization == 0.0
+
+
+async def test_status_reports_temporary_over_capacity_after_shrinking() -> None:
+    gate = AsyncBulkhead(label="status-resized", parallelism=2)
+    release = asyncio.Event()
+
+    async def hold() -> None:
+        async with gate.slot():
+            await release.wait()
+
+    active = [asyncio.create_task(hold()) for _ in range(2)]
+    await eventually(lambda: has_in_flight(gate, 2))
+
+    await gate.resize(1)
+    current = await gate.status()
+
+    assert current.parallelism == 1
+    assert current.in_flight == 2
+    assert current.free_slots == 0
+    assert current.capacity_excess == 1
+    assert current.is_over_capacity
+    assert current.is_saturated
+    assert current.utilization == 2.0
+
+    release.set()
+    await asyncio.gather(*active)
 
 
 async def has_in_flight(gate: AsyncBulkhead, expected: int) -> bool:

@@ -20,6 +20,7 @@ class BulkheadEventKind(str, Enum):
     CLOSED = "closed"
     CLOSED_REJECTION = "closed_rejection"
     DRAINED = "drained"
+    RESIZED = "resized"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,7 @@ class BulkheadEvent:
     from_queue: bool = False
     waited_seconds: float | None = None
     affected_waiters: int = 0
+    previous_parallelism: int | None = None
 
 
 BulkheadEventHandler = Callable[[BulkheadEvent], None]
