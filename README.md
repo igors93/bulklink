@@ -136,6 +136,21 @@ Increasing capacity admits queued operations in FIFO order. Reducing capacity ne
 cancels active work; existing operations drain naturally before admission resumes at
 the new limit.
 
+## Manage named bulkheads together
+
+```python
+from bulklink import BulkheadRegistry
+
+registry = BulkheadRegistry()
+payments = registry.create("payments", parallelism=10, waiting_room=20)
+reports = registry.create("reports", parallelism=2)
+
+await registry.close_and_wait()
+```
+
+The registry is optional. It enforces unique names, returns immutable ordered snapshots,
+and coordinates shutdown without replacing direct `AsyncBulkhead` usage.
+
 ## Designed to coexist with Relinker
 
 Bulklink and Relinker solve different stages:
@@ -169,6 +184,7 @@ python -m pip install -e ".[dev]"
 - [Production checklist](docs/guides/production-checklist.md)
 - [Capacity diagnostics](docs/concepts/capacity-diagnostics.md)
 - [Dynamic capacity](docs/concepts/dynamic-capacity.md)
+- [Named bulkhead registry](docs/concepts/registry.md)
 - [Architecture](docs/maintainers/architecture.md)
 
 ## License

@@ -12,6 +12,7 @@ src/bulklink/
 ├── capacity.py             immutable diagnostic contracts
 ├── errors.py               public exception hierarchy
 ├── events.py               immutable event contract
+├── registry.py             named ownership and collective lifecycle
 ├── status.py               immutable observable state
 ├── typing.py               shared type parameters
 └── _internal/
@@ -29,6 +30,12 @@ src/bulklink/
 ### AsyncBulkhead
 
 Exposes user-facing usage styles but stores no mutable concurrency state directly.
+
+### BulkheadRegistry
+
+Owns only named `AsyncBulkhead` references and registry lifecycle state. A short
+threading lock protects synchronous membership changes. No registry lock is held while
+awaiting a bulkhead operation. Collective methods operate on stable ordered snapshots.
 
 ### AdmissionCoordinator
 
@@ -78,6 +85,9 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 18. Capacity assessment is read-only and deterministic for the same snapshot.
 19. Capacity increases admit existing waiters before new arrivals.
 20. Capacity reductions never cancel admitted work or hand off replacements early.
+21. Registry names are unique and never silently replace an existing bulkhead.
+22. Registry shutdown prevents new members before taking the shutdown snapshot.
+23. Collective failure cannot skip remaining selected bulkheads.
 
 ## Why gradual capacity reduction?
 

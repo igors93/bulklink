@@ -14,6 +14,11 @@ from bulklink.errors import (
     BulklinkError,
 )
 from bulklink.events import BulkheadEvent, BulkheadEventHandler, BulkheadEventKind
+from bulklink.registry import (
+    BulkheadRegistry,
+    BulkheadRegistryFailure,
+    BulkheadRegistryOperationError,
+)
 from bulklink.status import BulkheadStatus
 
 __all__ = [
@@ -27,6 +32,9 @@ __all__ = [
     "BulkheadEventHandler",
     "BulkheadEventKind",
     "BulkheadQueueTimeoutError",
+    "BulkheadRegistry",
+    "BulkheadRegistryFailure",
+    "BulkheadRegistryOperationError",
     "BulkheadSaturatedError",
     "BulkheadStatus",
     "BulklinkError",

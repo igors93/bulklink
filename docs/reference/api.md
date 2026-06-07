@@ -14,6 +14,9 @@ from bulklink import (
     BulkheadEventHandler,
     BulkheadEventKind,
     BulkheadQueueTimeoutError,
+    BulkheadRegistry,
+    BulkheadRegistryFailure,
+    BulkheadRegistryOperationError,
     BulkheadSaturatedError,
     BulkheadStatus,
     BulklinkError,
@@ -88,3 +91,31 @@ severity, rejection and queueing ratios, wait-limit ratios, and a short summary.
 `CapacityFindingCode` is the stable machine-readable category. `CapacitySeverity`
 contains `ok`, `notice`, `warning`, and `critical`. Reports never alter capacity and do
 not include protected operation arguments, results, or exceptions.
+
+
+## BulkheadRegistry
+
+```python
+registry = BulkheadRegistry()
+bulkhead = registry.create(
+    "payments",
+    parallelism=10,
+    waiting_room=20,
+    wait_limit=1.0,
+)
+```
+
+Public operations:
+
+- `create()` adds one unique named bulkhead;
+- `get()` returns a registered instance;
+- `remove()` closes, drains, and then removes one instance;
+- `labels` returns an immutable creation-ordered tuple;
+- `statuses()` and `capacity_reports()` return creation-ordered tuples;
+- `close_all()` closes all current members and prevents future creation;
+- `wait_closed()` waits after collective shutdown has started;
+- `close_and_wait()` performs cancellation-safe collective shutdown.
+
+A collective operation attempts every selected member. If any fail,
+`BulkheadRegistryOperationError` contains immutable `BulkheadRegistryFailure` metadata
+for each failed label.

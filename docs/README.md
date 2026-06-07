@@ -14,6 +14,7 @@
 - [Cancellation safety](concepts/cancellation.md)
 - [Capacity diagnostics](concepts/capacity-diagnostics.md)
 - [Dynamic capacity](concepts/dynamic-capacity.md)
+- [Named bulkhead registry](concepts/registry.md)
 - [Status and metrics](concepts/observability.md)
 
 ## Reference

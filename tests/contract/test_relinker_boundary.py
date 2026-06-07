@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 
-from bulklink import AsyncBulkhead
+from bulklink import AsyncBulkhead, BulkheadRegistry
 
 
 def test_public_names_do_not_copy_relinker_vocabulary() -> None:
@@ -32,3 +32,26 @@ def test_public_names_do_not_copy_relinker_vocabulary() -> None:
     assert "run_async" not in public_methods
     assert "snapshot" not in public_methods
     assert "retry" not in public_methods
+
+
+def test_registry_names_remain_specific_to_bulkhead_ownership() -> None:
+    public_methods = {
+        name
+        for name, member in inspect.getmembers(BulkheadRegistry)
+        if not name.startswith("_") and callable(member)
+    }
+
+    assert {
+        "capacity_reports",
+        "close_all",
+        "close_and_wait",
+        "create",
+        "get",
+        "remove",
+        "statuses",
+        "wait_closed",
+    } <= public_methods
+    assert "policy" not in public_methods
+    assert "retry" not in public_methods
+    assert "run" not in public_methods
+    assert "snapshot" not in public_methods

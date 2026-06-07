@@ -12,6 +12,7 @@ All notable changes to Bulklink will be documented in this file.
 - Immutable lifecycle events with synchronous isolated handlers.
 - Immutable capacity reports with conservative diagnostic findings.
 - Dynamic execution capacity with FIFO-safe `resize()`.
+- Optional named bulkhead registry with collective lifecycle management.
 - Exact admission and waiting-room accounting metrics.
 
 ### Changed

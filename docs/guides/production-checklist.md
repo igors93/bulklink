@@ -16,6 +16,7 @@ Before deployment:
 12. Avoid automatically retrying overload rejections.
 13. Load test with realistic latency and error rates.
 14. Treat capacity reductions as gradual drains and monitor `is_over_capacity`.
+15. When using a registry, stop creation before shutdown and call `close_and_wait()`.
 
 A large waiting room does not create capacity. It stores more delayed work and uses
 more memory.

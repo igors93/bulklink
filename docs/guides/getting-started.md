@@ -165,3 +165,20 @@ except BulkheadQueueTimeoutError:
 
 These errors represent local admission decisions, not failures returned by the
 payment service.
+
+
+## Manage several named bulkheads
+
+```python
+from bulklink import BulkheadRegistry
+
+registry = BulkheadRegistry()
+payments = registry.create("payments", parallelism=10, waiting_room=20)
+reports = registry.create("reports", parallelism=2)
+
+await registry.close_and_wait()
+```
+
+Use a registry when one application owns several bulkheads and needs ordered status
+collection or one coordinated shutdown. Direct `AsyncBulkhead` construction remains the
+simplest option for isolated usage.
