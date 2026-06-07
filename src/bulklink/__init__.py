@@ -1,6 +1,12 @@
 """Stable Bulklink public API."""
 
 from bulklink.bulkhead import AsyncBulkhead
+from bulklink.capacity import (
+    CapacityFinding,
+    CapacityFindingCode,
+    CapacityReport,
+    CapacitySeverity,
+)
 from bulklink.errors import (
     BulkheadClosedError,
     BulkheadQueueTimeoutError,
@@ -12,6 +18,10 @@ from bulklink.status import BulkheadStatus
 
 __all__ = [
     "AsyncBulkhead",
+    "CapacityFinding",
+    "CapacityFindingCode",
+    "CapacityReport",
+    "CapacitySeverity",
     "BulkheadClosedError",
     "BulkheadEvent",
     "BulkheadEventHandler",

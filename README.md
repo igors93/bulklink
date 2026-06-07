@@ -111,6 +111,20 @@ metadata only. They never receive operation arguments, results, or exceptions. H
 failures are reported through the event loop exception handler without changing
 bulkhead state.
 
+## Diagnose capacity pressure
+
+```python
+report = await payments.capacity_report()
+
+print(report.summary)
+for finding in report.findings:
+    print(finding.severity.value, finding.message)
+```
+
+The report combines the current snapshot with cumulative admission history. It is
+immutable, conservative with small samples, and never changes the bulkhead
+configuration.
+
 ## Designed to coexist with Relinker
 
 Bulklink and Relinker solve different stages:
@@ -142,6 +156,7 @@ python -m pip install -e ".[dev]"
 - [Getting started](docs/guides/getting-started.md)
 - [Using Bulklink with Relinker](docs/guides/with-relinker.md)
 - [Production checklist](docs/guides/production-checklist.md)
+- [Capacity diagnostics](docs/concepts/capacity-diagnostics.md)
 - [Architecture](docs/maintainers/architecture.md)
 
 ## License

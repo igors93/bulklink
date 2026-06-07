@@ -6,6 +6,10 @@ import bulklink
 def test_root_public_api_is_exact_and_small() -> None:
     assert bulklink.__all__ == [
         "AsyncBulkhead",
+        "CapacityFinding",
+        "CapacityFindingCode",
+        "CapacityReport",
+        "CapacitySeverity",
         "BulkheadClosedError",
         "BulkheadEvent",
         "BulkheadEventHandler",

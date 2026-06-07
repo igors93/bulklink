@@ -116,6 +116,19 @@ payments.remove_event_handler(log_event)
 
 Events contain no arguments, results, or exceptions from the protected operation.
 
+## Diagnose capacity pressure
+
+```python
+report = await payments.capacity_report()
+
+print(report.summary)
+for finding in report.findings:
+    print(finding.code.value, finding.recommendation)
+```
+
+The report is a read-only interpretation of current state and cumulative counters. It
+does not resize the bulkhead or create monitoring tasks.
+
 ## Protect a function
 
 ```python

@@ -14,6 +14,7 @@ def test_public_names_do_not_copy_relinker_vocabulary() -> None:
 
     assert {
         "add_event_handler",
+        "capacity_report",
         "execute",
         "execute_now",
         "execute_within",

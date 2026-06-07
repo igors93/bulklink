@@ -10,6 +10,7 @@ All notable changes to Bulklink will be documented in this file.
 - `slot_within()` and `execute_within()` for shorter per-call queue wait limits.
 - `wait_closed()` and `close_and_wait()` for graceful asynchronous draining.
 - Immutable lifecycle events with synchronous isolated handlers.
+- Immutable capacity reports with conservative diagnostic findings.
 - Exact admission and waiting-room accounting metrics.
 
 ### Changed

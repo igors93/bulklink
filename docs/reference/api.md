@@ -5,6 +5,10 @@ Stable root imports:
 ```python
 from bulklink import (
     AsyncBulkhead,
+    CapacityFinding,
+    CapacityFindingCode,
+    CapacityReport,
+    CapacitySeverity,
     BulkheadClosedError,
     BulkheadEvent,
     BulkheadEventHandler,
@@ -38,6 +42,7 @@ Methods:
 - `execute_within(limit, operation, *args, **kwargs)` uses a stricter queue wait limit;
 - decorating an async function protects each invocation;
 - `status()` returns `BulkheadStatus`;
+- `capacity_report()` returns an immutable `CapacityReport`;
 - `close()` rejects queued and future operations;
 - `wait_closed()` waits for closing and active-work drainage;
 - `close_and_wait()` performs both shutdown steps;
@@ -65,3 +70,14 @@ Handlers execute outside internal locks and in registration order. Duplicate
 registration and removal of missing handlers are idempotent. Unsupported asynchronous
 handlers are rejected. Handler failures are reported through the running event loop's
 exception handler and do not alter bulkhead state.
+
+
+## Capacity diagnostics
+
+`CapacityReport` contains the status snapshot, configured wait limit, assessment time,
+and an immutable tuple of `CapacityFinding` values. Its derived properties include
+severity, rejection and queueing ratios, wait-limit ratios, and a short summary.
+
+`CapacityFindingCode` is the stable machine-readable category. `CapacitySeverity`
+contains `ok`, `notice`, `warning`, and `critical`. Reports never alter capacity and do
+not include protected operation arguments, results, or exceptions.

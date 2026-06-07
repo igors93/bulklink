@@ -99,3 +99,12 @@ order outside the coordinator lock. Use a non-blocking queue operation such as
 Adding the same handler object twice is idempotent. Removing a missing handler is also
 idempotent. All handler failures are sent to `loop.call_exception_handler()` and do not
 change admission, queue, or capacity state.
+
+
+## Capacity reports
+
+`capacity_report()` interprets the same immutable status values using conservative,
+documented thresholds. Reports are useful for human diagnostics, while status values
+and lifecycle events remain the preferred inputs for application-specific monitoring.
+
+See [Capacity diagnostics](capacity-diagnostics.md).

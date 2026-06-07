@@ -8,7 +8,7 @@ Before deployment:
 4. Prefer a finite `wait_limit` in request/response systems.
 5. Configure network and database timeouts separately.
 6. Decide how saturation and queue expiration are translated at the application edge.
-7. Export `status()` values to metrics.
+7. Export `status()` values to metrics and review `capacity_report()` findings.
 8. Keep event handlers synchronous, fast, and free of blocking I/O.
 9. Forward events with non-blocking queue operations when asynchronous export is needed.
 10. Use `close_and_wait()` during application shutdown.

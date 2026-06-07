@@ -19,4 +19,5 @@ Important behavioral contracts:
 - cancelling a shutdown waiter does not cancel protected work;
 - event handlers run outside coordinator locks;
 - handler failures do not change protected operation outcomes or capacity state;
-- event payloads exclude operation arguments, results, and exceptions.
+- event payloads exclude operation arguments, results, and exceptions;
+- capacity reports are immutable and never alter admission or configuration.

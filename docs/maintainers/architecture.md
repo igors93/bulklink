@@ -9,6 +9,7 @@ private components.
 src/bulklink/
 ├── __init__.py             stable root imports
 ├── bulkhead.py             public facade
+├── capacity.py             immutable diagnostic contracts
 ├── errors.py               public exception hierarchy
 ├── events.py               immutable event contract
 ├── status.py               immutable observable state
@@ -16,6 +17,7 @@ src/bulklink/
 └── _internal/
     ├── cancellation.py     protected critical cleanup
     ├── coordinator.py      admission, FIFO handoff, counters, closing
+    ├── diagnostics.py      pure capacity assessment rules
     ├── events.py           synchronous isolated event dispatch
     ├── models.py           private waiter and counter models
     ├── slot.py             context-manager lifecycle
@@ -38,6 +40,12 @@ draining signal, and counters.
 Stores a stable tuple of synchronous handlers. The coordinator creates immutable event
 snapshots while holding its lock, then dispatches them only after the lock has been
 released. Handler failures are isolated and reported to the event loop.
+
+### Capacity diagnostics
+
+`capacity_report()` reads one immutable status snapshot and passes it to pure assessment
+rules. The rules use documented minimum sample sizes and never acquire coordinator
+locks, modify counters, or change capacity.
 
 ### SlotContext
 
@@ -67,6 +75,7 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 15. Event handlers never execute while the coordinator lock is held.
 16. Event payloads never contain protected operation arguments, results, or exceptions.
 17. Handler failures cannot change capacity, queue state, or admission outcomes.
+18. Capacity assessment is read-only and deterministic for the same snapshot.
 
 ## Why direct slot transfer?
 

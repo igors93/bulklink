@@ -6,7 +6,9 @@ from collections.abc import Awaitable, Callable
 from functools import wraps
 
 from bulklink._internal.coordinator import AdmissionCoordinator
+from bulklink._internal.diagnostics import assess_capacity
 from bulklink._internal.slot import SlotContext
+from bulklink.capacity import CapacityReport
 from bulklink.events import BulkheadEventHandler
 from bulklink.status import BulkheadStatus
 from bulklink.typing import P, T
@@ -136,6 +138,11 @@ class AsyncBulkhead:
     async def status(self) -> BulkheadStatus:
         """Return an immutable point-in-time status report."""
         return await self._coordinator.status()
+
+    async def capacity_report(self) -> CapacityReport:
+        """Return an immutable diagnosis of current and cumulative capacity pressure."""
+        current = await self.status()
+        return assess_capacity(current, wait_limit=self.wait_limit)
 
     async def close(self) -> None:
         """Reject queued and future operations without interrupting active work."""
