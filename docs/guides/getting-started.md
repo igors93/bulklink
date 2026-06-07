@@ -52,6 +52,30 @@ async with payments.slot_now():
 Both forms raise `BulkheadSaturatedError` when a slot is not immediately available.
 They do not consume waiting-room capacity and never overtake existing waiters.
 
+
+## Use a shorter limit for one call
+
+A caller can choose a stricter queue wait limit without changing the bulkhead:
+
+```python
+response = await payments.execute_within(
+    0.25,
+    payment_client.send,
+    order,
+)
+```
+
+For a protected block:
+
+```python
+async with payments.slot_within(0.25):
+    response = await payment_client.send(order)
+```
+
+The effective limit is the shorter of the bulkhead default and the per-call value.
+The limit applies only while waiting for admission; it does not time out the protected
+operation itself.
+
 ## Protect a function
 
 ```python

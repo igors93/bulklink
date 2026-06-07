@@ -57,6 +57,12 @@ Reject instead of waiting when immediate capacity is required:
 result = await payments.execute_now(payment_api.send, order)
 ```
 
+Use a shorter limit for one call without extending the bulkhead default:
+
+```python
+result = await payments.execute_within(0.25, payment_api.send, order)
+```
+
 Or decorate an async function:
 
 ```python

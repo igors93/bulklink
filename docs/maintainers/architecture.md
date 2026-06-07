@@ -33,7 +33,8 @@ and counters.
 
 ### SlotContext
 
-Owns exactly one successful admission/release lifecycle through injected admission and release actions.
+Owns exactly one admission/release lifecycle through injected actions. Internal
+states prevent concurrent reuse while admission or release is still running.
 
 ### BulkheadStatus
 
@@ -51,6 +52,8 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 8. `close()` does not cancel active user code.
 9. public imports remain intentionally small.
 10. Bulklink naming remains independent from Relinker naming.
+11. Per-call wait limits can tighten but never extend the configured limit.
+12. One slot context cannot run overlapping admission or release lifecycles.
 
 ## Why direct slot transfer?
 

@@ -26,13 +26,26 @@ def require_non_negative_integer(name: str, value: int) -> int:
     return value
 
 
+def require_positive_number(name: str, value: float) -> float:
+    """Return a positive finite float."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a positive finite number")
+    converted = float(value)
+    if converted <= 0 or not math.isfinite(converted):
+        raise ValueError(f"{name} must be a positive finite number")
+    return converted
+
+
 def require_optional_positive_number(name: str, value: float | None) -> float | None:
     """Return ``None`` or a positive finite float."""
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{name} must be a positive finite number or None")
-    converted = float(value)
-    if converted <= 0 or not math.isfinite(converted):
-        raise ValueError(f"{name} must be a positive finite number or None")
-    return converted
+    return require_positive_number(name, value)
+
+
+def resolve_wait_limit(default: float | None, requested: float) -> float:
+    """Return the shortest valid wait limit for one admission."""
+    per_call = require_positive_number("wait_limit", requested)
+    if default is None:
+        return per_call
+    return min(default, per_call)

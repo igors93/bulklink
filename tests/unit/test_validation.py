@@ -43,3 +43,23 @@ def test_label_is_normalized_and_properties_are_exposed() -> None:
     assert gate.parallelism == 2
     assert gate.waiting_room == 3
     assert gate.wait_limit == 1.0
+
+
+@pytest.mark.parametrize("value", [0, -1, True, math.inf, math.nan, "1"])
+def test_slot_within_requires_a_positive_finite_number(value: object) -> None:
+    gate = AsyncBulkhead(label="per-call-validation", parallelism=1)
+
+    with pytest.raises(ValueError):
+        gate.slot_within(value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [0, -1, True, math.inf, math.nan, "1"])
+async def test_execute_within_requires_a_positive_finite_number(value: object) -> None:
+    gate = AsyncBulkhead(label="execute-validation", parallelism=1)
+
+    with pytest.raises(ValueError):
+        await gate.execute_within(value, asyncio_noop)  # type: ignore[arg-type]
+
+
+async def asyncio_noop() -> None:
+    return None

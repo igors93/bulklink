@@ -72,6 +72,14 @@ class AsyncBulkhead:
             release=self._coordinator.release,
         )
 
+    def slot_within(self, wait_limit: float, /) -> SlotContext:
+        """Return a context manager with a shorter per-call queue wait limit."""
+        effective_limit = self._coordinator.effective_wait_limit(wait_limit)
+        return SlotContext(
+            admit=lambda: self._coordinator.enter_within(effective_limit),
+            release=self._coordinator.release,
+        )
+
     async def execute(
         self,
         operation: Callable[P, Awaitable[T]],
@@ -90,6 +98,18 @@ class AsyncBulkhead:
     ) -> T:
         """Execute one async callable only when a slot is immediately available."""
         async with self.slot_now():
+            return await operation(*args, **kwargs)
+
+    async def execute_within(
+        self,
+        wait_limit: float,
+        operation: Callable[P, Awaitable[T]],
+        /,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        """Execute one async callable using a shorter per-call queue wait limit."""
+        async with self.slot_within(wait_limit):
             return await operation(*args, **kwargs)
 
     def __call__(

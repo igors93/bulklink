@@ -14,6 +14,7 @@ from bulklink._internal.validation import (
     require_non_negative_integer,
     require_optional_positive_number,
     require_positive_integer,
+    resolve_wait_limit,
 )
 from bulklink.errors import (
     BulkheadClosedError,
@@ -62,6 +63,10 @@ class AdmissionCoordinator:
     def wait_limit(self) -> float | None:
         return self._wait_limit
 
+    def effective_wait_limit(self, requested: float) -> float:
+        """Return the shortest limit allowed for one queued admission."""
+        return resolve_wait_limit(self._wait_limit, requested)
+
     def _bind_to_running_loop(self) -> asyncio.AbstractEventLoop:
         loop = asyncio.get_running_loop()
         if self._owner_loop is None:
@@ -73,7 +78,14 @@ class AdmissionCoordinator:
         return loop
 
     async def enter(self) -> None:
-        """Admit immediately, queue, or reject one operation."""
+        """Admit immediately, queue, or reject using the configured wait limit."""
+        await self._enter(self._wait_limit)
+
+    async def enter_within(self, wait_limit: float) -> None:
+        """Admit using a per-call wait limit no longer than the configured limit."""
+        await self._enter(self.effective_wait_limit(wait_limit))
+
+    async def _enter(self, wait_limit: float | None) -> None:
         loop = self._bind_to_running_loop()
 
         async with self._mutex:
@@ -98,7 +110,7 @@ class AdmissionCoordinator:
             )
 
         try:
-            state = await self._await_terminal_state(entry)
+            state = await self._await_terminal_state(entry, wait_limit)
         except asyncio.TimeoutError as error:
             try:
                 state = await complete_cleanup(self._expire_waiter(entry))
@@ -113,10 +125,11 @@ class AdmissionCoordinator:
             if state is not WaitState.EXPIRED:
                 raise RuntimeError(f"unexpected wait state after timeout: {state.name}") from error
 
-            assert self._wait_limit is not None
+            if wait_limit is None:
+                raise RuntimeError("a queued admission expired without a wait limit") from error
             raise BulkheadQueueTimeoutError(
                 label=self._label,
-                wait_limit=self._wait_limit,
+                wait_limit=wait_limit,
             ) from error
         except asyncio.CancelledError:
             await complete_cleanup(self._cancel_waiter(entry))
@@ -127,10 +140,11 @@ class AdmissionCoordinator:
         if state is WaitState.CLOSED:
             raise BulkheadClosedError(label=self._label)
         if state is WaitState.EXPIRED:
-            assert self._wait_limit is not None
+            if wait_limit is None:
+                raise RuntimeError("a queued admission expired without a wait limit")
             raise BulkheadQueueTimeoutError(
                 label=self._label,
-                wait_limit=self._wait_limit,
+                wait_limit=wait_limit,
             )
         if state is WaitState.CANCELLED:
             raise asyncio.CancelledError
@@ -168,12 +182,16 @@ class AdmissionCoordinator:
             waiting_room=self._waiting_room,
         )
 
-    async def _await_terminal_state(self, entry: WaitEntry) -> WaitState:
-        if self._wait_limit is None:
+    async def _await_terminal_state(
+        self,
+        entry: WaitEntry,
+        wait_limit: float | None,
+    ) -> WaitState:
+        if wait_limit is None:
             return await asyncio.shield(entry.future)
         return await asyncio.wait_for(
             asyncio.shield(entry.future),
-            timeout=self._wait_limit,
+            timeout=wait_limit,
         )
 
     def _grant_directly(self) -> None:

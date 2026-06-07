@@ -7,11 +7,13 @@ All notable changes to Bulklink will be documented in this file.
 ### Added
 
 - `slot_now()` and `execute_now()` for admission without waiting-room entry.
+- `slot_within()` and `execute_within()` for shorter per-call queue wait limits.
 - Exact admission and waiting-room accounting metrics.
 
 ### Changed
 
 - Split closed-state and cancellation metrics by lifecycle stage.
+- Hardened slot context lifecycle against concurrent reuse during admission and release.
 
 ## 0.1.0 - 2026-06-07
 

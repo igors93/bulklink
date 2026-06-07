@@ -27,3 +27,12 @@ usually use a finite limit.
 `slot_now()` and `execute_now()` never enter the waiting room. They either acquire a
 slot immediately or raise `BulkheadSaturatedError`. Existing FIFO waiters always keep
 priority, so immediate admission cannot jump ahead of queued work.
+
+## Per-call wait limits
+
+`slot_within(limit)` and `execute_within(limit, operation, ...)` use a stricter limit
+for one admission. The effective queue wait is the shorter of the configured default
+and the requested value. A per-call limit can never extend the bulkhead default.
+
+The limit starts after the operation enters the waiting room and ends when a slot is
+admitted. Time spent inside the protected operation is not included.
