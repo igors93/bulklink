@@ -284,6 +284,7 @@ class AdmissionCoordinator:
         state: WaitState,
         *,
         remove_from_queue: bool,
+        occurred_at: float | None = None,
     ) -> tuple[WaitState, BulkheadEvent]:
         """Move one waiting entry to a terminal state under the coordinator lock."""
         if state is WaitState.WAITING:
@@ -310,6 +311,7 @@ class AdmissionCoordinator:
             entry.future.set_result(WaitState.ADMITTED)
             event = self._event_locked(
                 BulkheadEventKind.ADMITTED,
+                occurred_at=occurred_at,
                 from_queue=True,
                 waited_seconds=waited,
             )
@@ -318,6 +320,7 @@ class AdmissionCoordinator:
             entry.future.cancel()
             event = self._event_locked(
                 BulkheadEventKind.CANCELLED,
+                occurred_at=occurred_at,
                 from_queue=True,
                 waited_seconds=waited,
             )
@@ -326,6 +329,7 @@ class AdmissionCoordinator:
             entry.future.set_result(WaitState.EXPIRED)
             event = self._event_locked(
                 BulkheadEventKind.EXPIRED,
+                occurred_at=occurred_at,
                 from_queue=True,
                 waited_seconds=waited,
             )
@@ -334,6 +338,7 @@ class AdmissionCoordinator:
             entry.future.set_result(WaitState.CLOSED)
             event = self._event_locked(
                 BulkheadEventKind.CLOSED_REJECTION,
+                occurred_at=occurred_at,
                 from_queue=True,
                 waited_seconds=waited,
             )
@@ -360,9 +365,18 @@ class AdmissionCoordinator:
     def _finish_admitted_slot_locked(self) -> tuple[BulkheadEvent, ...]:
         if self._in_flight <= 0:
             raise RuntimeError("execution slot released without a matching admission")
+
+        occurred_at = time()
         self._counters.finished_total += 1
-        capacity_events = self._release_capacity_locked()
-        released = self._event_locked(BulkheadEventKind.RELEASED)
+
+        capacity_events = self._release_capacity_locked(
+            occurred_at=occurred_at,
+        )
+        released = self._event_locked(
+            BulkheadEventKind.RELEASED,
+            occurred_at=occurred_at,
+        )
+
         return (released, *capacity_events)
 
     def _abandon_admitted_slot_locked(
@@ -371,34 +385,53 @@ class AdmissionCoordinator:
     ) -> tuple[BulkheadEvent, ...]:
         if self._in_flight <= 0:
             raise RuntimeError("admitted slot abandoned without allocated capacity")
-        self._counters.abandoned_after_admission_total += 1
-        capacity_events = self._release_capacity_locked()
         if entry.waited_seconds is None:
             raise RuntimeError("admitted queue entry is missing its wait duration")
+
+        occurred_at = time()
+        self._counters.abandoned_after_admission_total += 1
+
+        capacity_events = self._release_capacity_locked(
+            occurred_at=occurred_at,
+        )
         abandoned = self._event_locked(
             BulkheadEventKind.ABANDONED,
+            occurred_at=occurred_at,
             from_queue=True,
             waited_seconds=entry.waited_seconds,
         )
+
         return (abandoned, *capacity_events)
 
-    def _release_capacity_locked(self) -> tuple[BulkheadEvent, ...]:
+    def _release_capacity_locked(
+        self,
+        *,
+        occurred_at: float | None = None,
+    ) -> tuple[BulkheadEvent, ...]:
         if self._waiters:
             entry = self._waiters.popleft()
+
             if entry.future.done():
                 raise RuntimeError("waiting entry future completed before admission")
+
             _, event = self._finish_waiter_locked(
                 entry,
                 WaitState.ADMITTED,
                 remove_from_queue=False,
+                occurred_at=occurred_at,
             )
+
             # Direct transfer keeps _in_flight unchanged.
             return (event,)
 
         self._in_flight -= 1
-        drained = self._signal_drained_if_ready_locked()
+
+        drained = self._signal_drained_if_ready_locked(
+            occurred_at=occurred_at,
+        )
         if drained is None:
             return ()
+
         return (drained,)
 
     def _drain_signal(self) -> asyncio.Event:
@@ -407,17 +440,27 @@ class AdmissionCoordinator:
             raise RuntimeError("bulkhead drain signal is unavailable before event-loop binding")
         return event
 
-    def _signal_drained_if_ready_locked(self) -> BulkheadEvent | None:
+    def _signal_drained_if_ready_locked(
+        self,
+        *,
+        occurred_at: float | None = None,
+    ) -> BulkheadEvent | None:
         if not self._closed or self._in_flight != 0:
             return None
+
         if self._waiters:
             raise RuntimeError("a closed and drained bulkhead cannot retain queued entries")
 
         signal = self._drain_signal()
         if signal.is_set():
             return None
+
         signal.set()
-        return self._event_locked(BulkheadEventKind.DRAINED)
+
+        return self._event_locked(
+            BulkheadEventKind.DRAINED,
+            occurred_at=occurred_at,
+        )
 
     async def close(self) -> None:
         """Close admission and wake queued operations with a closed state."""
@@ -495,6 +538,7 @@ class AdmissionCoordinator:
         self,
         kind: BulkheadEventKind,
         *,
+        occurred_at: float | None = None,
         from_queue: bool = False,
         waited_seconds: float | None = None,
         affected_waiters: int = 0,
@@ -502,7 +546,7 @@ class AdmissionCoordinator:
         return BulkheadEvent(
             kind=kind,
             label=self._label,
-            occurred_at=time(),
+            occurred_at=time() if occurred_at is None else occurred_at,
             parallelism=self._parallelism,
             waiting_room=self._waiting_room,
             in_flight=self._in_flight,

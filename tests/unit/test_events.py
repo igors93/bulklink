@@ -63,6 +63,8 @@ async def test_fifo_handoff_emits_events_in_state_transition_order() -> None:
         BulkheadEventKind.ADMITTED,
         BulkheadEventKind.RELEASED,
     ]
+    assert events[2].occurred_at <= events[3].occurred_at
+
     queued_admission = events[3]
     assert queued_admission.from_queue
     assert queued_admission.waited_seconds is not None
@@ -224,6 +226,7 @@ async def test_closing_emits_summary_rejections_and_drained_events() -> None:
         BulkheadEventKind.RELEASED,
         BulkheadEventKind.DRAINED,
     ]
+    assert events[-2].occurred_at <= events[-1].occurred_at
     assert events[-1].is_closed
     assert events[-1].in_flight == 0
     await assert_bulkhead_consistent(gate)
