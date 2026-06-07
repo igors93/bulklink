@@ -23,25 +23,33 @@ async def test_initial_status() -> None:
     assert current.waiting == 0
     assert current.free_slots == 2
     assert not current.is_saturated
+    assert current.utilization == 0.0
+    assert current.queue_utilization == 0.0
+    assert current.direct_admitted_total == 0
+    assert current.closed_total == 0
     assert current.rejected_total == 0
+    assert current.settled_waiting_total == 0
     assert current.average_wait_seconds == 0.0
     assert not current.is_closed
 
 
 async def test_status_tracks_active_and_finished_operations() -> None:
-    gate = AsyncBulkhead(label="workers", parallelism=1)
+    gate = AsyncBulkhead(label="workers", parallelism=2)
 
     async with gate.slot():
         active = await gate.status()
         assert active.in_flight == 1
         assert active.admitted_total == 1
+        assert active.direct_admitted_total == 1
         assert active.peak_in_flight == 1
-        assert active.is_saturated
+        assert active.utilization == 0.5
+        assert not active.is_saturated
 
     finished = await gate.status()
     assert finished.in_flight == 0
     assert finished.finished_total == 1
-    assert finished.free_slots == 1
+    assert finished.abandoned_after_admission_total == 0
+    assert finished.free_slots == 2
 
 
 async def test_status_measures_admitted_queue_wait() -> None:
@@ -57,15 +65,27 @@ async def test_status_measures_admitted_queue_wait() -> None:
 
     second = asyncio.create_task(gate.execute(asyncio.sleep, 0))
     await eventually(lambda: has_waiting(gate, 1))
+
+    queued = await gate.status()
+    assert queued.queue_utilization == 1.0
+    assert queued.settled_waiting_total == 0
+
     await asyncio.sleep(0.005)
     release.set()
     await asyncio.gather(first, second)
 
     current = await gate.status()
     assert current.admitted_from_queue_total == 1
+    assert current.settled_waiting_total == 1
     assert current.cumulative_wait_seconds > 0
     assert current.longest_wait_seconds > 0
     assert current.average_wait_seconds > 0
+
+
+async def test_queue_utilization_is_zero_without_a_waiting_room() -> None:
+    gate = AsyncBulkhead(label="no-queue", parallelism=1, waiting_room=0)
+
+    assert (await gate.status()).queue_utilization == 0.0
 
 
 async def has_in_flight(gate: AsyncBulkhead, expected: int) -> bool:

@@ -34,7 +34,7 @@ async def test_cancelling_queued_operation_removes_it() -> None:
         pass
 
     current = await gate.status()
-    assert current.cancelled_total == 1
+    assert current.cancelled_while_waiting_total == 1
     assert current.in_flight == 0
 
 
@@ -83,7 +83,7 @@ async def test_many_cancellation_races_do_not_leak_slots() -> None:
 
     current = await gate.status()
     assert current.in_flight == 0
-    assert current.cancelled_total == 20
+    assert current.cancelled_while_waiting_total == 20
 
 
 async def in_flight(gate: AsyncBulkhead, expected: int) -> bool:

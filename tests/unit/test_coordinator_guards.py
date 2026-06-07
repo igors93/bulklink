@@ -76,7 +76,7 @@ async def test_completed_waiter_future_is_reported_before_handoff() -> None:
         coordinator._waiters.append(entry)
 
         with pytest.raises(RuntimeError, match="future completed before admission"):
-            coordinator._release_locked(mark_finished=True)
+            coordinator._finish_admitted_slot_locked()
 
 
 async def test_expiration_observes_an_existing_terminal_state() -> None:

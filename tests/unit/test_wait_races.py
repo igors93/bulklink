@@ -58,7 +58,7 @@ async def test_repeated_cancellation_while_queued_does_not_leak_capacity() -> No
     current = await gate.status()
     assert current.in_flight == 0
     assert current.waiting == 0
-    assert current.cancelled_total == 1
+    assert current.cancelled_while_waiting_total == 1
     assert terminal_wait_outcomes(current) == 1
     await assert_bulkhead_consistent(gate)
 
@@ -105,7 +105,8 @@ async def test_cancellation_after_slot_handoff_returns_transferred_capacity() ->
     assert current.waiting == 0
     assert current.admitted_total == 2
     assert current.finished_total == 1
-    assert current.cancelled_total == 0
+    assert current.abandoned_after_admission_total == 1
+    assert current.cancelled_while_waiting_total == 0
     await assert_bulkhead_consistent(gate)
 
 
@@ -146,6 +147,8 @@ async def test_close_wins_timeout_race_without_double_counting() -> None:
     await active
 
     current = await gate.status()
+    assert current.closed_while_waiting_total == 1
+    assert current.closed_before_queue_total == 0
     assert current.closed_total == 1
     assert current.expired_total == 0
     assert current.rejected_total == 1
@@ -192,6 +195,8 @@ async def test_timeout_wins_close_race_without_double_counting() -> None:
 
     current = await gate.status()
     assert current.expired_total == 1
+    assert current.closed_while_waiting_total == 0
+    assert current.closed_before_queue_total == 0
     assert current.closed_total == 0
     assert current.rejected_total == 1
     assert terminal_wait_outcomes(current) == 1
@@ -235,8 +240,10 @@ async def test_close_wins_cancellation_race_without_double_counting() -> None:
     await active
 
     current = await gate.status()
+    assert current.closed_while_waiting_total == 1
+    assert current.closed_before_queue_total == 0
     assert current.closed_total == 1
-    assert current.cancelled_total == 0
+    assert current.cancelled_while_waiting_total == 0
     assert current.rejected_total == 1
     assert terminal_wait_outcomes(current) == 1
     await assert_bulkhead_consistent(gate)
@@ -279,7 +286,7 @@ async def test_cancellation_wins_close_race_without_double_counting() -> None:
     await active
 
     current = await gate.status()
-    assert current.cancelled_total == 1
+    assert current.cancelled_while_waiting_total == 1
     assert current.closed_total == 0
     assert current.rejected_total == 0
     assert terminal_wait_outcomes(current) == 1
@@ -295,7 +302,7 @@ async def has_waiting(gate: AsyncBulkhead, expected: int) -> bool:
 
 
 def terminal_wait_outcomes(status: object) -> int:
-    return status.cancelled_total + status.expired_total + status.closed_total
+    return status.cancelled_while_waiting_total + status.expired_total + status.closed_total
 
 
 async def test_handoff_wins_timeout_race_without_expiration() -> None:

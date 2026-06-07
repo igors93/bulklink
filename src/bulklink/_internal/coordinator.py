@@ -77,7 +77,7 @@ class AdmissionCoordinator:
 
         async with self._mutex:
             if self._closed:
-                self._counters.closed_total += 1
+                self._counters.closed_before_queue_total += 1
                 raise BulkheadClosedError(label=self._label)
 
             if self._in_flight < self._parallelism and not self._waiters:
@@ -183,7 +183,7 @@ class AdmissionCoordinator:
                 )
 
             if entry.state is WaitState.ADMITTED:
-                self._release_locked(mark_finished=False)
+                self._abandon_admitted_slot_locked()
 
             return entry.state
 
@@ -217,13 +217,13 @@ class AdmissionCoordinator:
             )
             entry.future.set_result(WaitState.ADMITTED)
         elif state is WaitState.CANCELLED:
-            self._counters.cancelled_total += 1
+            self._counters.cancelled_while_waiting_total += 1
             entry.future.cancel()
         elif state is WaitState.EXPIRED:
             self._counters.expired_total += 1
             entry.future.set_result(WaitState.EXPIRED)
         elif state is WaitState.CLOSED:
-            self._counters.closed_total += 1
+            self._counters.closed_while_waiting_total += 1
             entry.future.set_result(WaitState.CLOSED)
         else:
             raise RuntimeError(f"unsupported terminal wait state: {state.name}")
@@ -236,20 +236,26 @@ class AdmissionCoordinator:
         except ValueError as error:
             raise RuntimeError("waiting entry is missing from the FIFO queue") from error
 
-    async def release(self, *, mark_finished: bool = True) -> None:
-        """Release or transfer one previously granted execution slot."""
+    async def release(self) -> None:
+        """Finish one protected operation and release or transfer its slot."""
         self._bind_to_running_loop()
 
         async with self._mutex:
-            self._release_locked(mark_finished=mark_finished)
+            self._finish_admitted_slot_locked()
 
-    def _release_locked(self, *, mark_finished: bool) -> None:
+    def _finish_admitted_slot_locked(self) -> None:
         if self._in_flight <= 0:
             raise RuntimeError("execution slot released without a matching admission")
+        self._counters.finished_total += 1
+        self._release_capacity_locked()
 
-        if mark_finished:
-            self._counters.finished_total += 1
+    def _abandon_admitted_slot_locked(self) -> None:
+        if self._in_flight <= 0:
+            raise RuntimeError("admitted slot abandoned without allocated capacity")
+        self._counters.abandoned_after_admission_total += 1
+        self._release_capacity_locked()
 
+    def _release_capacity_locked(self) -> None:
         if self._waiters:
             entry = self._waiters.popleft()
             if entry.future.done():
@@ -296,11 +302,13 @@ class AdmissionCoordinator:
                 waiting=len(self._waiters),
                 admitted_total=counters.admitted_total,
                 admitted_from_queue_total=counters.admitted_from_queue_total,
+                abandoned_after_admission_total=counters.abandoned_after_admission_total,
                 queued_total=counters.queued_total,
                 saturated_total=counters.saturated_total,
                 expired_total=counters.expired_total,
-                cancelled_total=counters.cancelled_total,
-                closed_total=counters.closed_total,
+                cancelled_while_waiting_total=counters.cancelled_while_waiting_total,
+                closed_before_queue_total=counters.closed_before_queue_total,
+                closed_while_waiting_total=counters.closed_while_waiting_total,
                 finished_total=counters.finished_total,
                 peak_in_flight=counters.peak_in_flight,
                 peak_waiting=counters.peak_waiting,

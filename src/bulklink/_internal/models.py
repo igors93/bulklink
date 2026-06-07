@@ -46,11 +46,13 @@ class RuntimeCounters:
 
     admitted_total: int = 0
     admitted_from_queue_total: int = 0
+    abandoned_after_admission_total: int = 0
     queued_total: int = 0
     saturated_total: int = 0
     expired_total: int = 0
-    cancelled_total: int = 0
-    closed_total: int = 0
+    cancelled_while_waiting_total: int = 0
+    closed_before_queue_total: int = 0
+    closed_while_waiting_total: int = 0
     finished_total: int = 0
     peak_in_flight: int = 0
     peak_waiting: int = 0

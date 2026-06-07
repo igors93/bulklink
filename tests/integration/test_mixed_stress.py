@@ -52,7 +52,7 @@ async def test_mixed_success_failure_and_cancellation_stress() -> None:
     assert current.in_flight == 0
     assert current.waiting == 0
     assert current.queued_total == 120
-    assert current.cancelled_total == len(cancelled)
+    assert current.cancelled_while_waiting_total == len(cancelled)
     assert current.admitted_from_queue_total == len(survivors)
     assert current.admitted_total == len(holders) + len(survivors)
     assert current.finished_total == len(holders) + len(survivors)

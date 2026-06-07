@@ -41,7 +41,10 @@ async def test_close_rejects_queued_and_future_work_but_not_active_work() -> Non
 
     current = await gate.status()
     assert current.is_closed
+    assert current.closed_while_waiting_total == 1
+    assert current.closed_before_queue_total == 1
     assert current.closed_total == 2
+    assert current.rejected_total == 2
     assert current.in_flight == 0
 
 
@@ -53,6 +56,8 @@ async def test_close_is_idempotent() -> None:
 
     current = await gate.status()
     assert current.is_closed
+    assert current.closed_before_queue_total == 0
+    assert current.closed_while_waiting_total == 0
     assert current.closed_total == 0
 
 
