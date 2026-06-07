@@ -21,6 +21,8 @@ def test_public_names_do_not_copy_relinker_vocabulary() -> None:
         "slot_within",
         "status",
         "close",
+        "close_and_wait",
+        "wait_closed",
     } <= public_methods
     assert "run" not in public_methods
     assert "run_async" not in public_methods

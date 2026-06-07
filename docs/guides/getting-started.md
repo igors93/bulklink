@@ -52,7 +52,6 @@ async with payments.slot_now():
 Both forms raise `BulkheadSaturatedError` when a slot is not immediately available.
 They do not consume waiting-room capacity and never overtake existing waiters.
 
-
 ## Use a shorter limit for one call
 
 A caller can choose a stricter queue wait limit without changing the bulkhead:
@@ -75,6 +74,24 @@ async with payments.slot_within(0.25):
 The effective limit is the shorter of the bulkhead default and the per-call value.
 The limit applies only while waiting for admission; it does not time out the protected
 operation itself.
+
+## Shut down gracefully
+
+Close admission and wait for active work to finish:
+
+```python
+await payments.close_and_wait()
+```
+
+For separate lifecycle steps:
+
+```python
+await payments.close()
+await payments.wait_closed()
+```
+
+`close()` rejects queued and future operations but never cancels work that already
+holds a slot. Multiple tasks may await `wait_closed()` independently.
 
 ## Protect a function
 

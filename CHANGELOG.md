@@ -8,6 +8,7 @@ All notable changes to Bulklink will be documented in this file.
 
 - `slot_now()` and `execute_now()` for admission without waiting-room entry.
 - `slot_within()` and `execute_within()` for shorter per-call queue wait limits.
+- `wait_closed()` and `close_and_wait()` for graceful asynchronous draining.
 - Exact admission and waiting-room accounting metrics.
 
 ### Changed

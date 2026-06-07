@@ -131,3 +131,11 @@ class AsyncBulkhead:
     async def close(self) -> None:
         """Reject queued and future operations without interrupting active work."""
         await self._coordinator.close()
+
+    async def wait_closed(self) -> None:
+        """Wait until the bulkhead is closed and active work has drained."""
+        await self._coordinator.wait_closed()
+
+    async def close_and_wait(self) -> None:
+        """Close admission and wait until every active operation has left."""
+        await self._coordinator.close_and_wait()

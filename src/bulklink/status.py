@@ -31,6 +31,11 @@ class BulkheadStatus:
     is_closed: bool
 
     @property
+    def is_drained(self) -> bool:
+        """Return True after closing when no active or queued work remains."""
+        return self.is_closed and self.in_flight == 0 and self.waiting == 0
+
+    @property
     def free_slots(self) -> int:
         """Return execution slots currently available for immediate admission."""
         return max(0, self.parallelism - self.in_flight)

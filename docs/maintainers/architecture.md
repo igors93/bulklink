@@ -29,7 +29,7 @@ Exposes user-facing usage styles but stores no mutable concurrency state directl
 ### AdmissionCoordinator
 
 Owns the lock, FIFO queue, in-flight count, event-loop binding, slot handoff, closing,
-and counters.
+draining signal, and counters.
 
 ### SlotContext
 
@@ -54,9 +54,18 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 10. Bulklink naming remains independent from Relinker naming.
 11. Per-call wait limits can tighten but never extend the configured limit.
 12. One slot context cannot run overlapping admission or release lifecycles.
+13. Drain completion is signalled only after closing and when `in_flight` reaches zero.
+14. Cancelling one shutdown waiter cannot affect active work or other shutdown waiters.
 
 ## Why direct slot transfer?
 
 On release, the coordinator transfers the slot to the oldest waiter while holding the
 lock. It does not decrement capacity and make the waiter race to acquire it. This
 prevents queue jumping and keeps accounting atomic.
+
+## Why an event for draining?
+
+The coordinator owns one event-loop-bound signal that is set exactly once, after
+admission has closed and all allocated slots have been returned. Waiting callers use
+that signal directly, so shutdown requires no polling and cancellation of one waiter
+does not alter shared state.

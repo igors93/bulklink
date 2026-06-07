@@ -57,6 +57,13 @@ async def assert_bulkhead_consistent(bulkhead: Any) -> None:
         assert counters.cumulative_wait_seconds >= 0
         assert counters.longest_wait_seconds >= 0
 
+        drain_event = coordinator._drained_event
+        if drain_event is not None:
+            should_be_drained = coordinator._closed and in_flight == 0
+            assert drain_event.is_set() is should_be_drained
+            if should_be_drained:
+                assert not waiters
+
         if counters.admitted_from_queue_total == 0:
             assert counters.cumulative_wait_seconds == 0
             assert counters.longest_wait_seconds == 0

@@ -14,7 +14,8 @@ background metrics task; applications decide how and when to export it.
 - `free_slots` is the immediately available execution capacity;
 - `utilization` is `in_flight / parallelism`;
 - `queue_utilization` is `waiting / waiting_room`, or zero when waiting is disabled;
-- `peak_in_flight` and `peak_waiting` are historical high-water marks.
+- `peak_in_flight` and `peak_waiting` are historical high-water marks;
+- `is_drained` is true only after closing when no active or queued work remains.
 
 ## Admissions
 

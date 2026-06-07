@@ -9,9 +9,10 @@ Before deployment:
 5. Configure network and database timeouts separately.
 6. Decide how saturation and queue expiration are translated at the application edge.
 7. Export `status()` values to metrics.
-8. Test task cancellation and application shutdown.
-9. Avoid automatically retrying overload rejections.
-10. Load test with realistic latency and error rates.
+8. Use `close_and_wait()` during application shutdown.
+9. Test cancellation of shutdown waiters without cancelling protected work.
+10. Avoid automatically retrying overload rejections.
+11. Load test with realistic latency and error rates.
 
 A large waiting room does not create capacity. It stores more delayed work and uses
 more memory.

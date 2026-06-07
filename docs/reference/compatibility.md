@@ -14,4 +14,6 @@ Important behavioral contracts:
 - no slot leaks after cancellation or exceptions;
 - no automatic retries;
 - active work is not cancelled by `close()`;
-- queued and future work is rejected after `close()`.
+- queued and future work is rejected after `close()`;
+- `wait_closed()` completes only after closing and active-work drainage;
+- cancelling a shutdown waiter does not cancel protected work.

@@ -46,6 +46,7 @@ class AdmissionCoordinator:
         self._closed = False
         self._counters = RuntimeCounters()
         self._owner_loop: asyncio.AbstractEventLoop | None = None
+        self._drained_event: asyncio.Event | None = None
 
     @property
     def label(self) -> str:
@@ -71,6 +72,7 @@ class AdmissionCoordinator:
         loop = asyncio.get_running_loop()
         if self._owner_loop is None:
             self._owner_loop = loop
+            self._drained_event = asyncio.Event()
         elif self._owner_loop is not loop:
             raise RuntimeError(
                 f"bulkhead {self._label!r} cannot be shared across different event loops"
@@ -310,6 +312,20 @@ class AdmissionCoordinator:
             return
 
         self._in_flight -= 1
+        self._signal_drained_if_ready_locked()
+
+    def _drain_signal(self) -> asyncio.Event:
+        event = self._drained_event
+        if event is None:
+            raise RuntimeError("bulkhead drain signal is unavailable before event-loop binding")
+        return event
+
+    def _signal_drained_if_ready_locked(self) -> None:
+        if not self._closed or self._in_flight != 0:
+            return
+        if self._waiters:
+            raise RuntimeError("a closed and drained bulkhead cannot retain queued entries")
+        self._drain_signal().set()
 
     async def close(self) -> None:
         """Close admission and wake queued operations with a closed state."""
@@ -328,6 +344,18 @@ class AdmissionCoordinator:
                     WaitState.CLOSED,
                     remove_from_queue=False,
                 )
+
+            self._signal_drained_if_ready_locked()
+
+    async def wait_closed(self) -> None:
+        """Wait until admission is closed and every active operation has left."""
+        self._bind_to_running_loop()
+        await self._drain_signal().wait()
+
+    async def close_and_wait(self) -> None:
+        """Close admission safely, then wait until active work has drained."""
+        await complete_cleanup(self.close())
+        await self.wait_closed()
 
     async def status(self) -> BulkheadStatus:
         """Build an immutable status report under the coordinator lock."""

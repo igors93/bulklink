@@ -80,7 +80,17 @@ For each bulkhead:
 3. an operation is rejected immediately when both areas are full;
 4. a waiting operation is rejected when `wait_limit` expires;
 5. exceptions and task cancellation release capacity safely;
-6. `close()` rejects queued and future operations without interrupting active work.
+6. `close()` rejects queued and future operations without interrupting active work;
+7. `wait_closed()` waits until all active operations have released their slots.
+
+## Graceful shutdown
+
+```python
+await payments.close_and_wait()
+```
+
+`close_and_wait()` stops new admission, rejects queued work, and waits for operations
+already running to finish. Cancelling the caller does not cancel protected operations.
 
 ## Designed to coexist with Relinker
 
