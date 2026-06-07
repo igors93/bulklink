@@ -7,20 +7,37 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 
-class WakeReason(Enum):
-    """Reason a queued operation was awakened."""
+class WaitState(Enum):
+    """Lifecycle state of one FIFO waiting-room entry."""
 
+    WAITING = auto()
     ADMITTED = auto()
+    CANCELLED = auto()
+    EXPIRED = auto()
     CLOSED = auto()
+
+    @property
+    def is_terminal(self) -> bool:
+        """Return True after the entry has left the waiting state."""
+        return self is not WaitState.WAITING
 
 
 @dataclass(slots=True, eq=False)
-class WaitNode:
-    """One FIFO waiting-room entry."""
+class WaitEntry:
+    """One FIFO waiting-room entry with one irreversible terminal state."""
 
-    future: asyncio.Future[WakeReason]
+    future: asyncio.Future[WaitState]
     enqueued_at: float
-    granted: bool = False
+    state: WaitState = WaitState.WAITING
+
+    def transition_to(self, state: WaitState) -> bool:
+        """Move from waiting to one terminal state exactly once."""
+        if state is WaitState.WAITING:
+            raise ValueError("a wait entry cannot transition back to WAITING")
+        if self.state is not WaitState.WAITING:
+            return False
+        self.state = state
+        return True
 
 
 @dataclass(slots=True)

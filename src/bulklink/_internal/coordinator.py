@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from time import monotonic
-from typing import Final, Literal
 
-from bulklink._internal.models import RuntimeCounters, WaitNode, WakeReason
+from bulklink._internal.cancellation import complete_cleanup
+from bulklink._internal.models import RuntimeCounters, WaitEntry, WaitState
 from bulklink._internal.validation import (
     require_label,
     require_non_negative_integer,
@@ -21,14 +21,9 @@ from bulklink.errors import (
 )
 from bulklink.status import BulkheadStatus
 
-WaitOutcome = Literal["cancelled", "expired"]
-
 
 class AdmissionCoordinator:
     """Own all mutable state and synchronization for one async bulkhead."""
-
-    _CANCELLED: Final[WaitOutcome] = "cancelled"
-    _EXPIRED: Final[WaitOutcome] = "expired"
 
     def __init__(
         self,
@@ -44,7 +39,7 @@ class AdmissionCoordinator:
         self._wait_limit = require_optional_positive_number("wait_limit", wait_limit)
 
         self._mutex = asyncio.Lock()
-        self._waiters: deque[WaitNode] = deque()
+        self._waiters: deque[WaitEntry] = deque()
         self._in_flight = 0
         self._closed = False
         self._counters = RuntimeCounters()
@@ -99,8 +94,11 @@ class AdmissionCoordinator:
                     waiting_room=self._waiting_room,
                 )
 
-            node = WaitNode(future=loop.create_future(), enqueued_at=monotonic())
-            self._waiters.append(node)
+            entry = WaitEntry(
+                future=loop.create_future(),
+                enqueued_at=monotonic(),
+            )
+            self._waiters.append(entry)
             self._counters.queued_total += 1
             self._counters.peak_waiting = max(
                 self._counters.peak_waiting,
@@ -108,30 +106,50 @@ class AdmissionCoordinator:
             )
 
         try:
-            reason = await self._await_wakeup(node)
+            state = await self._await_terminal_state(entry)
         except asyncio.TimeoutError as error:
-            had_slot = await self._withdraw(node, outcome=self._EXPIRED)
-            if had_slot:
-                await self.release(mark_finished=False)
+            try:
+                state = await complete_cleanup(self._settle_waiter(entry, WaitState.EXPIRED))
+            except asyncio.CancelledError:
+                await complete_cleanup(self._cancel_waiter(entry))
+                raise
+
+            if state is WaitState.ADMITTED:
+                return
+            if state is WaitState.CLOSED:
+                raise BulkheadClosedError(label=self._label) from error
+            if state is not WaitState.EXPIRED:
+                raise RuntimeError(f"unexpected wait state after timeout: {state.name}") from error
+
             assert self._wait_limit is not None
             raise BulkheadQueueTimeoutError(
                 label=self._label,
                 wait_limit=self._wait_limit,
             ) from error
         except asyncio.CancelledError:
-            had_slot = await self._withdraw(node, outcome=self._CANCELLED)
-            if had_slot:
-                await self.release(mark_finished=False)
+            await complete_cleanup(self._cancel_waiter(entry))
             raise
 
-        if reason is WakeReason.CLOSED:
+        if state is WaitState.ADMITTED:
+            return
+        if state is WaitState.CLOSED:
             raise BulkheadClosedError(label=self._label)
+        if state is WaitState.EXPIRED:
+            assert self._wait_limit is not None
+            raise BulkheadQueueTimeoutError(
+                label=self._label,
+                wait_limit=self._wait_limit,
+            )
+        if state is WaitState.CANCELLED:
+            raise asyncio.CancelledError
 
-    async def _await_wakeup(self, node: WaitNode) -> WakeReason:
+        raise RuntimeError(f"unexpected terminal wait state: {state.name}")
+
+    async def _await_terminal_state(self, entry: WaitEntry) -> WaitState:
         if self._wait_limit is None:
-            return await asyncio.shield(node.future)
+            return await asyncio.shield(entry.future)
         return await asyncio.wait_for(
-            asyncio.shield(node.future),
+            asyncio.shield(entry.future),
             timeout=self._wait_limit,
         )
 
@@ -143,59 +161,104 @@ class AdmissionCoordinator:
             self._in_flight,
         )
 
-    async def _withdraw(self, node: WaitNode, *, outcome: WaitOutcome) -> bool:
-        """Remove a waiter or report that a slot was already transferred to it."""
+    async def _settle_waiter(
+        self,
+        entry: WaitEntry,
+        requested_state: WaitState,
+    ) -> WaitState:
+        """Settle one queued entry if it is still waiting."""
+        if requested_state not in {
+            WaitState.CANCELLED,
+            WaitState.EXPIRED,
+            WaitState.CLOSED,
+        }:
+            raise ValueError("requested_state must end queue waiting")
+
         async with self._mutex:
-            if outcome == self._EXPIRED:
-                self._counters.expired_total += 1
-            else:
+            if entry.state is not WaitState.WAITING:
+                return entry.state
+
+            self._remove_waiter_locked(entry)
+            changed = entry.transition_to(requested_state)
+            if not changed:
+                raise RuntimeError("wait entry changed state while coordinator lock was held")
+
+            if requested_state is WaitState.CANCELLED:
                 self._counters.cancelled_total += 1
+                entry.future.cancel()
+            elif requested_state is WaitState.EXPIRED:
+                self._counters.expired_total += 1
+                entry.future.set_result(WaitState.EXPIRED)
+            else:
+                self._counters.closed_total += 1
+                entry.future.set_result(WaitState.CLOSED)
 
-            if node.granted:
-                return True
+            return requested_state
 
-            try:
-                self._waiters.remove(node)
-            except ValueError:
-                return node.granted
+    async def _cancel_waiter(self, entry: WaitEntry) -> WaitState:
+        """Cancel waiting or return a slot already transferred to this entry."""
+        async with self._mutex:
+            if entry.state is WaitState.WAITING:
+                self._remove_waiter_locked(entry)
+                changed = entry.transition_to(WaitState.CANCELLED)
+                if not changed:
+                    raise RuntimeError("wait entry changed state while coordinator lock was held")
+                self._counters.cancelled_total += 1
+                entry.future.cancel()
+                return WaitState.CANCELLED
 
-            if not node.future.done():
-                node.future.cancel()
-            return False
+            if entry.state is WaitState.ADMITTED:
+                self._release_locked(mark_finished=False)
+
+            return entry.state
+
+    def _remove_waiter_locked(self, entry: WaitEntry) -> None:
+        try:
+            self._waiters.remove(entry)
+        except ValueError as error:
+            raise RuntimeError("waiting entry is missing from the FIFO queue") from error
 
     async def release(self, *, mark_finished: bool = True) -> None:
         """Release or transfer one previously granted execution slot."""
         self._bind_to_running_loop()
 
         async with self._mutex:
-            if self._in_flight <= 0:
-                raise RuntimeError("execution slot released without a matching admission")
+            self._release_locked(mark_finished=mark_finished)
 
-            if mark_finished:
-                self._counters.finished_total += 1
+    def _release_locked(self, *, mark_finished: bool) -> None:
+        if self._in_flight <= 0:
+            raise RuntimeError("execution slot released without a matching admission")
 
-            while self._waiters:
-                node = self._waiters.popleft()
-                if node.future.cancelled() or node.future.done():
-                    continue
+        if mark_finished:
+            self._counters.finished_total += 1
 
-                node.granted = True
-                waited = max(0.0, monotonic() - node.enqueued_at)
-                self._counters.admitted_total += 1
-                self._counters.admitted_from_queue_total += 1
-                self._counters.cumulative_wait_seconds += waited
-                self._counters.longest_wait_seconds = max(
-                    self._counters.longest_wait_seconds,
-                    waited,
-                )
-                node.future.set_result(WakeReason.ADMITTED)
-                # Direct transfer keeps _in_flight unchanged.
-                return
+        while self._waiters:
+            entry = self._waiters.popleft()
+            if entry.state is not WaitState.WAITING:
+                raise RuntimeError("terminal wait entry remained in the FIFO queue")
+            if entry.future.done():
+                raise RuntimeError("waiting entry future completed before admission")
 
-            self._in_flight -= 1
+            changed = entry.transition_to(WaitState.ADMITTED)
+            if not changed:
+                raise RuntimeError("waiting entry could not transition to ADMITTED")
+
+            waited = max(0.0, monotonic() - entry.enqueued_at)
+            self._counters.admitted_total += 1
+            self._counters.admitted_from_queue_total += 1
+            self._counters.cumulative_wait_seconds += waited
+            self._counters.longest_wait_seconds = max(
+                self._counters.longest_wait_seconds,
+                waited,
+            )
+            entry.future.set_result(WaitState.ADMITTED)
+            # Direct transfer keeps _in_flight unchanged.
+            return
+
+        self._in_flight -= 1
 
     async def close(self) -> None:
-        """Close admission and wake queued operations with a closed signal."""
+        """Close admission and wake queued operations with a closed state."""
         self._bind_to_running_loop()
 
         async with self._mutex:
@@ -203,13 +266,18 @@ class AdmissionCoordinator:
                 return
 
             self._closed = True
-            pending = tuple(self._waiters)
-            self._waiters.clear()
-            self._counters.closed_total += len(pending)
 
-            for node in pending:
-                if not node.future.done():
-                    node.future.set_result(WakeReason.CLOSED)
+            while self._waiters:
+                entry = self._waiters.popleft()
+                if entry.state is not WaitState.WAITING:
+                    raise RuntimeError("terminal wait entry remained in the FIFO queue")
+
+                changed = entry.transition_to(WaitState.CLOSED)
+                if not changed:
+                    raise RuntimeError("waiting entry could not transition to CLOSED")
+
+                self._counters.closed_total += 1
+                entry.future.set_result(WaitState.CLOSED)
 
     async def status(self) -> BulkheadStatus:
         """Build an immutable status report under the coordinator lock."""

@@ -4,19 +4,31 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Coroutine
-from typing import Any
+from typing import Any, TypeVar
+
+T = TypeVar("T")
 
 
-async def complete_cleanup(action: Coroutine[Any, Any, None]) -> None:
-    """Finish a cleanup coroutine before propagating a new cancellation.
+async def complete_cleanup(action: Coroutine[Any, Any, T]) -> T:
+    """Finish one cleanup coroutine despite repeated cancellation requests.
 
-    Normal cancellation inside protected user code already allows ``__aexit__`` to
-    run. This helper also protects slot release from a second cancellation arriving
-    while cleanup is waiting for the coordinator lock.
+    Cancellation is remembered and propagated only after the cleanup task has
+    finished. An exception raised by the cleanup itself takes precedence because
+    it indicates that internal state may not have been restored.
     """
-    task = asyncio.create_task(action)
-    try:
-        await asyncio.shield(task)
-    except asyncio.CancelledError:
-        await task
-        raise
+    cleanup_task = asyncio.create_task(action)
+    cancellation: asyncio.CancelledError | None = None
+
+    while not cleanup_task.done():
+        try:
+            await asyncio.shield(cleanup_task)
+        except asyncio.CancelledError as error:
+            if cancellation is None:
+                cancellation = error
+
+    result = cleanup_task.result()
+
+    if cancellation is not None:
+        raise cancellation
+
+    return result
