@@ -7,6 +7,10 @@
 Bulklink is a small, typed, zero-dependency library for bulkhead isolation and
 bounded concurrency in Python `asyncio` applications.
 
+[![CI](https://github.com/igors93/bulklink/actions/workflows/ci.yml/badge.svg)](https://github.com/igors93/bulklink/actions/workflows/ci.yml)
+
+Tested on Python 3.10 through 3.14.
+
 </div>
 
 ## What problem does it solve?

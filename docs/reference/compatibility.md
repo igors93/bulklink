@@ -1,5 +1,9 @@
 # Compatibility policy
 
+Bulklink supports Python 3.10 through 3.14. The CI matrix runs the full test suite on
+each supported version, while release verification installs the built wheel into a clean
+virtual environment and checks its public typing contract.
+
 Starting with 1.0, names exported by `bulklink.__all__` are the stable public API.
 
 Before 1.0, minor releases may adjust behavior or naming when necessary. Changes must
@@ -23,7 +27,7 @@ Important behavioral contracts:
 - capacity reports are immutable and never alter admission or configuration;
 - capacity increases preserve FIFO order;
 - capacity reductions never cancel active work;
-- closed bulkheads cannot be resized or reopened.
+- closed bulkheads cannot be resized or reopened;
 - registry names are unique and never silently replaced;
 - registry removal closes and drains before deleting membership;
 - collective registry shutdown prevents new creation and attempts every member.

@@ -19,6 +19,9 @@ All notable changes to Bulklink will be documented in this file.
 
 - Split closed-state and cancellation metrics by lifecycle stage.
 - Hardened slot context lifecycle against concurrent reuse during admission and release.
+- Added official CI coverage for Python 3.10 through 3.14.
+- Modernized package license metadata to the SPDX-based packaging standard.
+- Added clean-wheel installation, runtime smoke, archive safety, and consumer typing checks.
 
 ## 0.1.0 - 2026-06-07
 
