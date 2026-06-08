@@ -7,7 +7,7 @@
 Bulklink is a small, typed, zero-dependency library for bulkhead isolation and
 bounded concurrency in Python `asyncio` applications.
 
-Current package version: **0.5.0**. The documented `0.5.x` public contract is stable.
+Current package version: **0.6.0**. The documented `0.6.x` public contract is stable.
 
 </div>
 
@@ -190,6 +190,26 @@ carries an opaque instance identity and a strictly increasing sequence number, s
 cross-instance and reversed comparisons are rejected. Bulklink does not reset counters,
 retain historical windows, or create a background metrics task.
 
+## Isolate concurrency by customer or resource key
+
+```python
+from bulklink import PartitionedBulkhead
+
+customers = PartitionedBulkhead(
+    label="customers",
+    parallelism=3,
+    waiting_room=10,
+    max_partitions=1_000,
+    idle_timeout=300.0,
+)
+
+result = await customers.execute(customer_id, call_remote_service)
+```
+
+Each key receives an independent `AsyncBulkhead`. Retained cardinality is strictly bounded,
+idle partitions are reclaimed without background tasks, and partition keys are never
+placed in public status or errors.
+
 ## Change capacity safely
 
 ```python
@@ -248,6 +268,7 @@ python -m pip install -e ".[dev]"
 - [Production checklist](docs/guides/production-checklist.md)
 - [Capacity diagnostics](docs/concepts/capacity-diagnostics.md)
 - [Interval metrics](docs/concepts/interval-metrics.md)
+- [Partitioned isolation](docs/concepts/partitioned-isolation.md)
 - [Weighted capacity](docs/concepts/weighted-capacity.md)
 - [Dynamic capacity](docs/concepts/dynamic-capacity.md)
 - [Named bulkhead registry](docs/concepts/registry.md)

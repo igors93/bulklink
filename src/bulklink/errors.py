@@ -76,3 +76,22 @@ class WeightedBulkheadSaturatedError(BulklinkError):
             f"weighted bulkhead {label!r} is saturated "
             f"(cost={cost}, used={used}/{capacity}, waiting={waiting}/{waiting_room})"
         )
+
+
+class PartitionLimitError(BulklinkError):
+    """Raised when no new partition can be retained without evicting active work."""
+
+    def __init__(
+        self,
+        *,
+        label: str,
+        max_partitions: int,
+        active_partitions: int,
+    ) -> None:
+        self.label = label
+        self.max_partitions = max_partitions
+        self.active_partitions = active_partitions
+        super().__init__(
+            f"partitioned bulkhead {label!r} reached max_partitions={max_partitions} "
+            f"with {active_partitions} active partitions"
+        )

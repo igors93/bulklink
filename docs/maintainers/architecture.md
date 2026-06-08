@@ -12,6 +12,8 @@ src/bulklink/
 ├── capacity.py             immutable diagnostic contracts
 ├── errors.py               public exception hierarchy
 ├── events.py               immutable event contract
+├── partitioned.py          bounded per-key isolation facade
+├── partitioned_status.py   partition cardinality snapshots
 ├── registry.py             named ownership and collective lifecycle
 ├── status.py               immutable observable state
 ├── typing.py               shared type parameters
@@ -21,6 +23,8 @@ src/bulklink/
     ├── diagnostics.py      pure capacity assessment rules
     ├── events.py           synchronous isolated event dispatch
     ├── models.py           private waiter and counter models
+    ├── partitioned_coordinator.py bounded keyed ownership and cleanup
+    ├── partitioned_models.py private partition entries and counters
     ├── slot.py             context-manager lifecycle
     └── validation.py       deterministic validation
 ```
@@ -36,6 +40,12 @@ Exposes user-facing usage styles but stores no mutable concurrency state directl
 Owns only named `AsyncBulkhead` references and registry lifecycle state. A short
 threading lock protects synchronous membership changes. No registry lock is held while
 awaiting a bulkhead operation. Collective methods operate on stable ordered snapshots.
+
+### PartitionedBulkhead
+
+Owns a bounded, lazily created set of `AsyncBulkhead` children. A parent asyncio lock
+serializes key membership, lease counts, LRU idle reclamation, shutdown, and aggregate
+cardinality metrics. The key is never copied into child labels or public records.
 
 ### AdmissionCoordinator
 
@@ -88,6 +98,10 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 21. Registry names are unique and never silently replace an existing bulkhead.
 22. Registry shutdown prevents new members before taking the shutdown snapshot.
 23. Collective failure cannot skip remaining selected bulkheads.
+24. Partition cardinality never exceeds `max_partitions`.
+25. A partition with admitted or waiting callers is never reclaimed.
+26. Partition keys never appear in public manager errors or status.
+27. Graceful partitioned shutdown releases the retained key mapping.
 
 ## Why gradual capacity reduction?
 
@@ -135,3 +149,11 @@ A queued entry is admitted only when it is at the head and its complete cost fit
 allocation is forbidden. Resize-down is rejected when it would make an existing queued cost
 larger than total capacity. This prevents permanent head-of-line impossibility while keeping
 active work cancellation-free.
+
+
+## Partitioned admission
+
+A manager reference is acquired before child admission and released only after the complete
+child slot lifecycle. This prevents eviction while an operation is waiting or executing.
+Under cardinality pressure, only the least-recently-used entry with zero references may be
+removed. Normal TTL cleanup is explicit and runs no permanent task.

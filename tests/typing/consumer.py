@@ -9,6 +9,9 @@ from bulklink import (
     BulkheadRegistry,
     BulkheadStatus,
     CapacityReport,
+    PartitionedBulkhead,
+    PartitionedBulkheadInterval,
+    PartitionedBulkheadStatus,
     WeightedBulkhead,
     WeightedBulkheadEvent,
     WeightedBulkheadInterval,
@@ -76,6 +79,29 @@ async def consume_public_api() -> None:
     await weighted.resize(6)
     await weighted.close_and_wait()
 
+    partitioned = PartitionedBulkhead(
+        label="partitioned-consumer",
+        parallelism=2,
+        waiting_room=2,
+        wait_limit=1.0,
+        max_partitions=10,
+        idle_timeout=30.0,
+    )
+    partitioned_direct: str = await partitioned.execute("tenant-a", render, 10)
+    partitioned_immediate: str = await partitioned.execute_now("tenant-a", render, 11)
+    partitioned_limited: str = await partitioned.execute_within(0.5, "tenant-b", render, 12)
+    partitioned_deadline: str = await partitioned.execute_before(
+        loop.time() + 1.0, "tenant-c", render, 13
+    )
+    partitioned_previous: PartitionedBulkheadStatus = await partitioned.status()
+    partitioned_status: PartitionedBulkheadStatus = await partitioned.status()
+    partitioned_interval: PartitionedBulkheadInterval = partitioned_status.since(
+        partitioned_previous
+    )
+    removed: int = await partitioned.cleanup_idle()
+    discarded: bool = await partitioned.discard("tenant-a")
+    await partitioned.close_and_wait()
+
     registry = BulkheadRegistry()
     registered: AsyncBulkhead = registry.create("registered", parallelism=1)
     statuses: tuple[BulkheadStatus, ...] = await registry.statuses()
@@ -98,6 +124,14 @@ async def consume_public_api() -> None:
         weighted_deadline,
         weighted_status,
         weighted_interval,
+        partitioned_direct,
+        partitioned_immediate,
+        partitioned_limited,
+        partitioned_deadline,
+        partitioned_status,
+        partitioned_interval,
+        removed,
+        discarded,
         registered,
         statuses,
         reports,

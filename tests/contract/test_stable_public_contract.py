@@ -20,6 +20,10 @@ from bulklink import (
     CapacityFindingCode,
     CapacityReport,
     CapacitySeverity,
+    PartitionedBulkhead,
+    PartitionedBulkheadInterval,
+    PartitionedBulkheadStatus,
+    PartitionLimitError,
     WeightedBulkhead,
     WeightedBulkheadEvent,
     WeightedBulkheadInterval,
@@ -114,6 +118,34 @@ def test_public_immutable_record_fields_are_stable() -> None:
         "peak_waiting",
         "cumulative_wait_seconds",
         "longest_wait_seconds",
+        "is_closed",
+    )
+    assert _field_names(PartitionedBulkheadInterval) == (
+        "start",
+        "end",
+        "created",
+        "evicted",
+        "discarded",
+        "limit_rejected",
+    )
+    assert _field_names(PartitionedBulkheadStatus) == (
+        "instance_id",
+        "snapshot_index",
+        "label",
+        "parallelism",
+        "waiting_room",
+        "wait_limit",
+        "max_partitions",
+        "idle_timeout",
+        "partition_count",
+        "active_partitions",
+        "leased_operations",
+        "created_total",
+        "evicted_total",
+        "discarded_total",
+        "limit_rejected_total",
+        "peak_partitions",
+        "peak_leased_operations",
         "is_closed",
     )
     assert _field_names(WeightedBulkheadInterval) == (
@@ -226,6 +258,7 @@ def test_public_exception_hierarchy_is_stable() -> None:
     assert issubclass(BulkheadQueueTimeoutError, BulklinkError)
     assert issubclass(BulkheadRegistryOperationError, BulklinkError)
     assert issubclass(WeightedBulkheadSaturatedError, BulklinkError)
+    assert issubclass(PartitionLimitError, BulklinkError)
     assert not issubclass(BulkheadQueueTimeoutError, TimeoutError)
 
 
@@ -329,4 +362,42 @@ def test_interval_calling_convention_is_stable() -> None:
     assert _parameter_contract(BulkheadStatus.since) == (
         ("self", inspect.Parameter.POSITIONAL_ONLY),
         ("previous", inspect.Parameter.POSITIONAL_ONLY),
+    )
+
+
+def test_partitioned_calling_conventions_are_stable() -> None:
+    assert _parameter_contract(PartitionedBulkhead.__init__) == (
+        ("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        ("label", inspect.Parameter.KEYWORD_ONLY),
+        ("parallelism", inspect.Parameter.KEYWORD_ONLY),
+        ("max_partitions", inspect.Parameter.KEYWORD_ONLY),
+        ("waiting_room", inspect.Parameter.KEYWORD_ONLY),
+        ("wait_limit", inspect.Parameter.KEYWORD_ONLY),
+        ("idle_timeout", inspect.Parameter.KEYWORD_ONLY),
+    )
+    assert _parameter_contract(PartitionedBulkhead.execute) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("partition", inspect.Parameter.POSITIONAL_ONLY),
+        ("operation", inspect.Parameter.POSITIONAL_ONLY),
+        ("args", inspect.Parameter.VAR_POSITIONAL),
+        ("kwargs", inspect.Parameter.VAR_KEYWORD),
+    )
+    assert _parameter_contract(PartitionedBulkhead.execute_within) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("wait_limit", inspect.Parameter.POSITIONAL_ONLY),
+        ("partition", inspect.Parameter.POSITIONAL_ONLY),
+        ("operation", inspect.Parameter.POSITIONAL_ONLY),
+        ("args", inspect.Parameter.VAR_POSITIONAL),
+        ("kwargs", inspect.Parameter.VAR_KEYWORD),
+    )
+    assert _parameter_contract(PartitionedBulkhead.slot) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("partition", inspect.Parameter.POSITIONAL_ONLY),
+    )
+    assert _parameter_contract(PartitionedBulkhead.cleanup_idle) == (
+        ("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    )
+    assert _parameter_contract(PartitionedBulkhead.discard) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("partition", inspect.Parameter.POSITIONAL_ONLY),
     )

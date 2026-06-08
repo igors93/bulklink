@@ -12,9 +12,15 @@ from bulklink.errors import (
     BulkheadQueueTimeoutError,
     BulkheadSaturatedError,
     BulklinkError,
+    PartitionLimitError,
     WeightedBulkheadSaturatedError,
 )
 from bulklink.events import BulkheadEvent, BulkheadEventHandler, BulkheadEventKind
+from bulklink.partitioned import PartitionedBulkhead
+from bulklink.partitioned_status import (
+    PartitionedBulkheadInterval,
+    PartitionedBulkheadStatus,
+)
 from bulklink.registry import (
     BulkheadRegistry,
     BulkheadRegistryFailure,
@@ -43,6 +49,10 @@ __all__ = [
     "BulkheadSaturatedError",
     "BulkheadStatus",
     "BulklinkError",
+    "PartitionedBulkhead",
+    "PartitionedBulkheadInterval",
+    "PartitionedBulkheadStatus",
+    "PartitionLimitError",
     "WeightedBulkhead",
     "WeightedBulkheadEvent",
     "WeightedBulkheadEventHandler",
@@ -51,4 +61,4 @@ __all__ = [
     "WeightedBulkheadStatus",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

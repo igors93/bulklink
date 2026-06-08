@@ -162,6 +162,9 @@ from bulklink import (
     BulkheadInterval,
     BulkheadRegistry,
     BulkheadStatus,
+    PartitionedBulkhead,
+    PartitionedBulkheadInterval,
+    PartitionedBulkheadStatus,
     WeightedBulkhead,
     WeightedBulkheadEvent,
     WeightedBulkheadInterval,
@@ -187,6 +190,10 @@ assert bulklink.__all__ == [
     "BulkheadSaturatedError",
     "BulkheadStatus",
     "BulklinkError",
+    "PartitionedBulkhead",
+    "PartitionedBulkheadInterval",
+    "PartitionedBulkheadStatus",
+    "PartitionLimitError",
     "WeightedBulkhead",
     "WeightedBulkheadEvent",
     "WeightedBulkheadEventHandler",
@@ -236,6 +243,34 @@ assert tuple(field.name for field in fields(BulkheadInterval)) == (
     "closed_while_waiting",
     "finished",
     "cumulative_wait_seconds",
+)
+assert tuple(field.name for field in fields(PartitionedBulkheadInterval)) == (
+    "start",
+    "end",
+    "created",
+    "evicted",
+    "discarded",
+    "limit_rejected",
+)
+assert tuple(field.name for field in fields(PartitionedBulkheadStatus)) == (
+    "instance_id",
+    "snapshot_index",
+    "label",
+    "parallelism",
+    "waiting_room",
+    "wait_limit",
+    "max_partitions",
+    "idle_timeout",
+    "partition_count",
+    "active_partitions",
+    "leased_operations",
+    "created_total",
+    "evicted_total",
+    "discarded_total",
+    "limit_rejected_total",
+    "peak_partitions",
+    "peak_leased_operations",
+    "is_closed",
 )
 assert tuple(field.name for field in fields(WeightedBulkheadEvent)) == (
     "kind",
@@ -368,6 +403,28 @@ async def main() -> None:
     await gate.close_and_wait()
     assert events[0].kind is BulkheadEventKind.ADMITTED
 
+
+    partitioned = PartitionedBulkhead(
+        label="installed-partitioned",
+        parallelism=1,
+        waiting_room=1,
+        max_partitions=2,
+        idle_timeout=60.0,
+    )
+    partitioned_before = await partitioned.status()
+    assert await partitioned.execute(
+        "tenant-a", asyncio.sleep, 0, result="partitioned-ok"
+    ) == "partitioned-ok"
+    assert await partitioned.execute(
+        "tenant-b", asyncio.sleep, 0, result="partitioned-second"
+    ) == "partitioned-second"
+    partitioned_after = await partitioned.status()
+    partitioned_interval = partitioned_after.since(partitioned_before)
+    assert partitioned_interval.created == 2
+    assert partitioned_after.partition_count == 2
+    assert await partitioned.discard("tenant-a")
+    await partitioned.close_and_wait()
+    assert (await partitioned.status()).partition_count == 0
 
     weighted_events = []
     weighted = WeightedBulkhead(

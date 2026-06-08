@@ -227,3 +227,22 @@ result = await reports.execute(4, generate_report, request)
 ```
 
 Continue using `AsyncBulkhead` when every operation should consume one slot.
+
+## Isolate by partition key
+
+```python
+from bulklink import PartitionedBulkhead
+
+customers = PartitionedBulkhead(
+    label="customers",
+    parallelism=3,
+    waiting_room=10,
+    max_partitions=1_000,
+)
+
+result = await customers.execute(customer_id, operation)
+```
+
+Each key receives independent concurrency and FIFO waiting. `max_partitions` prevents
+unbounded memory growth, and keys are not included in public errors or status.
+

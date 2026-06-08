@@ -5,9 +5,9 @@ each supported version, with additional Windows and macOS validation. Release
 verification installs the built wheel into a clean virtual environment and checks its
 public typing and runtime contracts.
 
-## Stable `0.5.x` contract
+## Stable `0.6.x` contract
 
-Starting with `0.5.0`, patch releases preserve the documented public contract:
+Starting with `0.6.0`, patch releases preserve the documented public contract:
 
 - names and order exported by `bulklink.__all__`;
 - values of public enums;
@@ -48,7 +48,11 @@ release-process changes needed to validate the intended contract.
 - registry removal closes and drains before deleting membership;
 - collective registry shutdown prevents new creation and attempts every member;
 - interval metrics compare immutable snapshots without resetting cumulative counters;
-- snapshot identity and sequence reject cross-instance and reversed interval comparisons.
+- snapshot identity and sequence reject cross-instance and reversed interval comparisons;
 - weighted admission preserves strict FIFO across different integer costs;
 - weighted resize never cancels active work and never strands a queued cost;
-- weighted snapshots use opaque identity and strict sequence validation.
+- weighted snapshots use opaque identity and strict sequence validation;
+- partition cardinality is bounded by `max_partitions`;
+- active partitions are never evicted;
+- partition keys do not appear in public errors or manager metrics;
+- partition cleanup uses no permanent background task.

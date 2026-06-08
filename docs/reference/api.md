@@ -1,6 +1,6 @@
 # Public API
 
-The `0.5.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
+The `0.6.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
 
 Stable root imports:
 
@@ -23,6 +23,10 @@ from bulklink import (
     BulkheadSaturatedError,
     BulkheadStatus,
     BulklinkError,
+    PartitionedBulkhead,
+    PartitionedBulkheadInterval,
+    PartitionedBulkheadStatus,
+    PartitionLimitError,
     WeightedBulkhead,
     WeightedBulkheadEvent,
     WeightedBulkheadEventHandler,
@@ -78,6 +82,34 @@ Reductions never cancel active work and may temporarily make `utilization` excee
 Resizing to the current value is a no-op, and resizing after closing raises
 `BulkheadClosedError`.
 
+
+
+## PartitionedBulkhead
+
+```python
+PartitionedBulkhead(
+    *,
+    label: str,
+    parallelism: int,
+    max_partitions: int,
+    waiting_room: int = 0,
+    wait_limit: float | None = None,
+    idle_timeout: float = 300.0,
+)
+```
+
+The first positional argument to each admission method is a hashable partition key. The
+manager supports `slot`, `slot_now`, `slot_within`, `slot_before`, and matching `execute`
+methods. `cleanup_idle()` removes partitions older than `idle_timeout`, while `discard(key)`
+removes one currently idle partition.
+
+`status()` returns `PartitionedBulkheadStatus`. The record contains aggregate cardinality
+and lifecycle metrics only; it never enumerates or renders keys. At `max_partitions`, the
+least-recently-used idle partition is reclaimed. If every partition is active,
+`PartitionLimitError` is raised.
+
+`close()`, `wait_closed()`, and `close_and_wait()` close all retained child bulkheads. A
+completed graceful shutdown releases retained keys.
 
 ## WeightedBulkhead
 

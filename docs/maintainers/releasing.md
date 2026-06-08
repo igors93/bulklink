@@ -3,24 +3,24 @@
 Bulklink releases are built from immutable Git tags and published through PyPI Trusted
 Publishing. The repository does not store PyPI passwords or long-lived API tokens.
 
-## Release `0.5.0`
+## Release `0.6.0`
 
 1. Confirm the feature commit passed Linux, Windows, and macOS CI.
 2. Install the current stable release from PyPI in a clean environment.
-3. Confirm weighted FIFO, unit accounting, cancellation, deadlines, resizing, and shutdown behavior.
-4. Update the project and runtime versions to `0.5.0`.
-5. Add a dated `0.5.0` changelog section while retaining all earlier release history.
+3. Confirm partition cardinality, key privacy, idle reclamation, child FIFO behavior, and shutdown.
+4. Update the project and runtime versions to `0.6.0`.
+5. Add a dated `0.6.0` changelog section while retaining all earlier release history.
 6. Review `bulklink.__all__`, public enum values, dataclass fields, exception inheritance,
    and primary method calling conventions.
 7. Run `./scripts/ci.sh` from a clean development environment.
 8. Commit the release and wait for every main CI job to pass.
-9. Create and push the annotated `v0.5.0` tag.
+9. Create and push the annotated `v0.6.0` tag.
 10. Review and approve the protected `pypi` environment.
 11. Confirm PyPI contains the verified wheel and source archive from the workflow.
 
 ```bash
-git tag -a v0.5.0 -m "Bulklink 0.5.0"
-git push origin v0.5.0
+git tag -a v0.6.0 -m "Bulklink 0.6.0"
+git push origin v0.6.0
 ```
 
 Never rename, replace, or reuse an existing release tag or artifact. Every release is a
@@ -43,7 +43,7 @@ The version is present in both `pyproject.toml` and `bulklink.__version__`. Cont
 and release verification fail when they differ or the changelog lacks a dated matching
 section. If `BULKLINK_RELEASE_TAG` is present, it must equal `v{version}` exactly.
 
-For the stable `0.5.x` line, the release also verifies the documented public exports,
+For the stable `0.6.x` line, the release also verifies the documented public exports,
 enum values, immutable record fields, exception hierarchy, and primary calling
 conventions. Intentional changes belong in a future minor release with changelog notes.
 
@@ -55,7 +55,7 @@ The release verifier checks:
 - SPDX license metadata and the packaged `LICENSE` file;
 - inclusion of the PEP 561 `py.typed` marker;
 - installation of the wheel into a temporary virtual environment;
-- runtime use of regular and weighted admission, deadlines, interval metrics, resizing, diagnostics, events, shutdown, and the registry;
+- runtime use of regular, weighted, and partitioned admission, deadlines, interval metrics, resizing, diagnostics, events, shutdown, and the registry;
 - the stable public contract from the installed wheel;
 - strict type checking of a consumer against the installed wheel rather than `src/`.
 
@@ -64,6 +64,6 @@ rebuild artifacts.
 
 ## Future releases
 
-Patch releases preserve the documented `0.5.x` contract. A future pre-1.0 minor release
+Patch releases preserve the documented `0.6.x` contract. A future pre-1.0 minor release
 may intentionally change or extend it, but must update contract tests, documentation, and
 the changelog together.

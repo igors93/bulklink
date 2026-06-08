@@ -22,3 +22,12 @@ Before deployment:
 16. When using a registry, stop creation before shutdown and call `close_and_wait()`.
 A large waiting room does not create capacity. It stores more delayed work and uses
 more memory.
+
+
+## Partitioned isolation
+
+- Set `max_partitions` from a realistic cardinality budget.
+- Use immutable, stable, hashable partition keys.
+- Keep keys free of secrets when possible even though Bulklink does not render them.
+- Call `cleanup_idle()` from an application-owned maintenance loop when normal TTL cleanup is desired.
+- Treat `PartitionLimitError` as local admission pressure, not as a remote network failure.

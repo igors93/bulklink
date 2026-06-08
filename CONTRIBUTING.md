@@ -16,7 +16,7 @@
 
 ## Stable patch discipline
 
-The `0.5.x` patch line preserves the documented public contract. Changes to root exports,
+The `0.6.x` patch line preserves the documented public contract. Changes to root exports,
 public enum values, frozen record fields, exception inheritance, or primary calling
 conventions require a future minor release and matching contract documentation.
 

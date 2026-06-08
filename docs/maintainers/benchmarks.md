@@ -33,3 +33,5 @@ persistent regressions across repeated runs instead.
 The `weighted_execute` scenario measures admission and release with integer costs cycling
 from one through four. It is a regression baseline only; normal operating-system noise must
 not become a strict release threshold.
+
+- `partitioned_execute`: repeated execution through a stable partition key.

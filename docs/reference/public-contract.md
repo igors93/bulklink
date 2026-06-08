@@ -1,6 +1,6 @@
 # Stable public contract
 
-This document records the compatibility surface promoted with Bulklink `0.5.0`. The
+This document records the compatibility surface promoted with Bulklink `0.6.0`. The
 repository enforces the same contract with automated tests and installed-wheel release
 verification.
 
@@ -23,7 +23,7 @@ The protected enums are:
 
 ## Immutable records
 
-The fields of these frozen dataclasses are protected for `0.5.x` patch compatibility:
+The fields of these frozen dataclasses are protected for `0.6.x` patch compatibility:
 
 - `BulkheadStatus`;
 - `BulkheadInterval`;
@@ -31,6 +31,8 @@ The fields of these frozen dataclasses are protected for `0.5.x` patch compatibi
 - `CapacityFinding`;
 - `CapacityReport`;
 - `BulkheadRegistryFailure`;
+- `PartitionedBulkheadStatus`;
+- `PartitionedBulkheadInterval`;
 - `WeightedBulkheadStatus`;
 - `WeightedBulkheadInterval`;
 - `WeightedBulkheadEvent`.
@@ -43,8 +45,9 @@ remove, rename, reorder, or change the meaning of their documented fields.
 All Bulklink-generated operational errors inherit from `BulklinkError`.
 `BulkheadQueueTimeoutError` deliberately does not inherit from `TimeoutError`, preventing
 generic network-timeout retry policies from treating local overload as a remote timeout.
-`WeightedBulkheadSaturatedError` is the weighted immediate/full-queue overload signal and
-also inherits from `BulklinkError`.
+`WeightedBulkheadSaturatedError` is the weighted immediate/full-queue overload signal.
+`PartitionLimitError` reports bounded partition-cardinality exhaustion. Both inherit from
+`BulklinkError` and neither exposes operation or partition-key data.
 
 ## Calling conventions
 
@@ -58,7 +61,7 @@ after it has started.
 
 ## Evolution before 1.0
 
-The `0.5.x` patch line is stable. A later minor release may add or intentionally revise
+The `0.6.x` patch line is stable. A later minor release may add or intentionally revise
 pre-1.0 APIs, but changes must be explicit, tested, and documented. Runtime dependencies
 remain zero unless a future design review demonstrates a compelling need.
 
@@ -78,3 +81,11 @@ Invalid chronology or incompatible snapshots raise `ValueError`.
 not allow smaller requests to overtake. Reducing capacity below active usage is allowed and
 drains naturally; reducing it below the largest queued cost is rejected. Weighted status,
 interval, and event records contain only capacity and timing metadata.
+
+
+## Partitioned admission
+
+`PartitionedBulkhead` owns a bounded set of lazily created `AsyncBulkhead` children. Keys
+are hashable application values but are never present in public status, errors, or child
+labels. `max_partitions` is a hard limit. Only idle partitions may be reclaimed, using LRU
+selection under pressure or explicit idle cleanup. No permanent cleanup task is created.

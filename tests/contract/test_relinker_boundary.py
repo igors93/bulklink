@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import inspect
 
-from bulklink import AsyncBulkhead, BulkheadRegistry, WeightedBulkhead
+from bulklink import (
+    AsyncBulkhead,
+    BulkheadRegistry,
+    PartitionedBulkhead,
+    WeightedBulkhead,
+)
 
 
 def test_public_names_do_not_copy_relinker_vocabulary() -> None:
@@ -82,4 +87,33 @@ def test_weighted_public_names_keep_admission_scope() -> None:
     assert "retry" not in public_methods
     assert "run" not in public_methods
     assert "run_async" not in public_methods
+    assert "snapshot" not in public_methods
+
+
+def test_partitioned_public_names_keep_isolation_scope() -> None:
+    public_methods = {
+        name
+        for name, member in inspect.getmembers(PartitionedBulkhead)
+        if not name.startswith("_") and callable(member)
+    }
+
+    assert {
+        "execute",
+        "execute_now",
+        "execute_within",
+        "execute_before",
+        "slot",
+        "slot_now",
+        "slot_within",
+        "slot_before",
+        "cleanup_idle",
+        "discard",
+        "status",
+        "close",
+        "wait_closed",
+        "close_and_wait",
+    } <= public_methods
+    assert "retry" not in public_methods
+    assert "rate_limit" not in public_methods
+    assert "priority" not in public_methods
     assert "snapshot" not in public_methods

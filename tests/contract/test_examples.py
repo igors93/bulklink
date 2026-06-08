@@ -15,6 +15,7 @@ EXAMPLES = (
     "absolute_deadline.py",
     "interval_metrics.py",
     "weighted_capacity.py",
+    "partitioned_isolation.py",
     "graceful_shutdown.py",
     "dynamic_capacity.py",
     "observability.py",

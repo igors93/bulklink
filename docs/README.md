@@ -17,6 +17,7 @@
 - [Named bulkhead registry](concepts/registry.md)
 - [Status and metrics](concepts/observability.md)
 - [Interval metrics](concepts/interval-metrics.md)
+- [Partitioned isolation](concepts/partitioned-isolation.md)
 - [Weighted capacity](concepts/weighted-capacity.md)
 
 ## Reference

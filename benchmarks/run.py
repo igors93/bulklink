@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter_ns
 from typing import Any
 
-from bulklink import AsyncBulkhead, WeightedBulkhead
+from bulklink import AsyncBulkhead, PartitionedBulkhead, WeightedBulkhead
 
 Scenario = Callable[[int], Awaitable[None]]
 
@@ -45,6 +45,17 @@ async def _weighted_execute(iterations: int) -> None:
     gate = WeightedBulkhead(label="benchmark-weighted-execute", capacity=4)
     for index in range(iterations):
         await gate.execute((index % 4) + 1, _noop)
+    await gate.close_and_wait()
+
+
+async def _partitioned_execute(iterations: int) -> None:
+    gate = PartitionedBulkhead(
+        label="benchmark-partitioned-execute",
+        parallelism=4,
+        max_partitions=16,
+    )
+    for index in range(iterations):
+        await gate.execute(index % 16, _noop)
     await gate.close_and_wait()
 
 
@@ -90,6 +101,7 @@ SCENARIOS: dict[str, Scenario] = {
     "execute": _execute,
     "slot": _slot,
     "weighted_execute": _weighted_execute,
+    "partitioned_execute": _partitioned_execute,
     "events": _events,
     "status": _status,
     "handoff": _handoff,

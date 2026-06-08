@@ -43,3 +43,10 @@ is safe.
 
 A cost greater than total current capacity raises `ValueError` instead because that request
 is impossible to admit under the current configuration.
+
+
+## PartitionLimitError
+
+Raised when a new partition key arrives at `max_partitions` and every retained partition is
+currently borrowed by admitted or waiting callers. The exception exposes only the manager
+label, configured limit, and active-partition count. It never includes the partition key.

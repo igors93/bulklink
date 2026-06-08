@@ -6,6 +6,27 @@ All notable changes to Bulklink will be documented in this file.
 
 No changes yet.
 
+## 0.6.0 - 2026-06-08
+
+### Added
+
+- `PartitionedBulkhead` for bounded per-key isolation with independent FIFO concurrency,
+  relative limits, absolute deadlines, cancellation safety, and graceful shutdown.
+- Hard `max_partitions` cardinality protection, least-recently-used idle reclamation under
+  pressure, explicit idle cleanup, and safe idle-only discard.
+- Immutable partition-manager status and interval metrics that never expose partition keys.
+- Executable partition-isolation example, adversarial stress coverage, typing checks, and
+  installed-wheel release verification.
+
+### Security
+
+- Partition keys are never included in public errors, manager status, or internal child
+  labels, and retained keys are released after graceful shutdown.
+
+### Changed
+
+- Promoted the documented compatibility contract to the `0.6.x` line.
+
 ## 0.5.0 - 2026-06-08
 
 ### Added
