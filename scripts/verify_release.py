@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 TYPING_CONFIG = ROOT / "tests/typing/mypy.ini"
 TYPING_CONSUMER = ROOT / "tests/typing/consumer.py"
+CHANGELOG = ROOT / "CHANGELOG.md"
+_RELEASE_TAG_ENV = "BULKLINK_RELEASE_TAG"
 
 _REQUIRED_WHEEL_FILES = {
     "bulklink/__init__.py",
@@ -54,6 +56,23 @@ def _runtime_version() -> str:
     if match is None:
         raise RuntimeError("runtime version is missing from bulklink.__init__")
     return match.group(1)
+
+
+def _verify_changelog(version: str) -> None:
+    text = CHANGELOG.read_text(encoding="utf-8")
+    pattern = rf"^## {re.escape(version)} - \d{{4}}-\d{{2}}-\d{{2}}$"
+    if re.search(pattern, text, flags=re.MULTILINE) is None:
+        raise RuntimeError(f"changelog is missing a dated section for {version}")
+
+
+def _verify_release_tag(version: str) -> None:
+    tag = os.environ.get(_RELEASE_TAG_ENV)
+    if tag is None:
+        return
+
+    expected = f"v{version}"
+    if tag != expected:
+        raise RuntimeError(f"release tag {tag!r} does not match expected tag {expected!r}")
 
 
 def _verify_safe_archive_names(names: list[str]) -> None:
@@ -203,6 +222,9 @@ def main() -> None:
     version = _declared_version()
     if _runtime_version() != version:
         raise RuntimeError("pyproject.toml and bulklink.__version__ disagree")
+
+    _verify_changelog(version)
+    _verify_release_tag(version)
 
     wheel = _single_artifact("*.whl")
     sdist = _single_artifact("*.tar.gz")

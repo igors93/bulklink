@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bulklink"
-version = "0.1.0"
+version = "0.2.0rc1"
 description = "Predictable bulkhead isolation and bounded concurrency for Python asyncio."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Bulklink Contributors" }]
 keywords = ["asyncio", "bulkhead", "concurrency", "backpressure", "resilience", "load-shedding"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",

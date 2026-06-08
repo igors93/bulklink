@@ -13,19 +13,15 @@
 9. Keep runtime dependencies at zero unless strongly justified.
 10. Make production behavior explainable.
 
+## Release-candidate discipline
+
+After a release candidate is declared, avoid adding new public APIs. Candidate updates
+should focus on defects, security, documentation, compatibility, and release validation.
+
 ## Local verification
 
-Install the development dependencies and run the same release-oriented checks used by
-maintainers:
+Run all checks with:
 
 ```bash
-python -m pip install -e ".[dev]"
 ./scripts/ci.sh
 ```
-
-The script verifies formatting, linting, strict typing, tests with coverage, source and
-wheel builds, archive contents, installation into a clean virtual environment, a runtime
-smoke test, and typing from the perspective of an installed consumer.
-
-GitHub Actions additionally runs the full test suite on Python 3.10, 3.11, 3.12, 3.13,
-and 3.14.

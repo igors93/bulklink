@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and verify tagged release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      BULKLINK_RELEASE_TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run complete release verification
+        run: ./scripts/ci.sh
+
+      - name: Upload verified distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: bulklink-${{ github.ref_name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish verified distributions to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/bulklink
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download verified distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: bulklink-${{ github.ref_name }}
+          path: dist
+
+      - name: Publish package distributions
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          print-hash: true

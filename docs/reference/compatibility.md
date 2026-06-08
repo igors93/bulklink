@@ -9,6 +9,10 @@ Starting with 1.0, names exported by `bulklink.__all__` are the stable public AP
 Before 1.0, minor releases may adjust behavior or naming when necessary. Changes must
 be documented in the changelog.
 
+During a release-candidate cycle, new public features are frozen. Candidate updates
+should contain only defect fixes, security hardening, documentation corrections, and
+release-process changes needed to validate the same intended public contract.
+
 Private modules under `bulklink._internal` may change without deprecation.
 
 Important behavioral contracts:
