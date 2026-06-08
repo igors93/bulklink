@@ -1,4 +1,4 @@
-"""Immutable runtime status for one bulkhead."""
+"""Immutable runtime status and interval metrics for one bulkhead."""
 
 from __future__ import annotations
 
@@ -104,3 +104,141 @@ class BulkheadStatus:
         if self.admitted_from_queue_total == 0:
             return 0.0
         return self.cumulative_wait_seconds / self.admitted_from_queue_total
+
+    def since(self, previous: BulkheadStatus, /) -> BulkheadInterval:
+        """Return immutable counter changes since an earlier status from this bulkhead."""
+        if not isinstance(previous, BulkheadStatus):
+            raise TypeError("previous must be a BulkheadStatus")
+        return BulkheadInterval._between(previous, self)
+
+
+@dataclass(frozen=True, slots=True)
+class BulkheadInterval:
+    """Immutable activity measured between two status snapshots."""
+
+    start: BulkheadStatus
+    end: BulkheadStatus
+    admitted: int
+    admitted_from_queue: int
+    abandoned_after_admission: int
+    queued: int
+    saturated: int
+    expired: int
+    expired_before_queue: int
+    cancelled_while_waiting: int
+    closed_before_queue: int
+    closed_while_waiting: int
+    finished: int
+    cumulative_wait_seconds: float
+
+    @classmethod
+    def _between(
+        cls,
+        start: BulkheadStatus,
+        end: BulkheadStatus,
+    ) -> BulkheadInterval:
+        _validate_interval_snapshots(start, end)
+        return cls(
+            start=start,
+            end=end,
+            admitted=end.admitted_total - start.admitted_total,
+            admitted_from_queue=(end.admitted_from_queue_total - start.admitted_from_queue_total),
+            abandoned_after_admission=(
+                end.abandoned_after_admission_total - start.abandoned_after_admission_total
+            ),
+            queued=end.queued_total - start.queued_total,
+            saturated=end.saturated_total - start.saturated_total,
+            expired=end.expired_total - start.expired_total,
+            expired_before_queue=(
+                end.expired_before_queue_total - start.expired_before_queue_total
+            ),
+            cancelled_while_waiting=(
+                end.cancelled_while_waiting_total - start.cancelled_while_waiting_total
+            ),
+            closed_before_queue=(end.closed_before_queue_total - start.closed_before_queue_total),
+            closed_while_waiting=(
+                end.closed_while_waiting_total - start.closed_while_waiting_total
+            ),
+            finished=end.finished_total - start.finished_total,
+            cumulative_wait_seconds=(end.cumulative_wait_seconds - start.cumulative_wait_seconds),
+        )
+
+    @property
+    def direct_admitted(self) -> int:
+        """Return interval admissions that did not wait in the queue."""
+        return self.admitted - self.admitted_from_queue
+
+    @property
+    def closed(self) -> int:
+        """Return interval rejections caused by closing."""
+        return self.closed_before_queue + self.closed_while_waiting
+
+    @property
+    def rejected(self) -> int:
+        """Return all interval rejections caused by capacity, deadlines, or closing."""
+        return self.saturated + self.expired + self.expired_before_queue + self.closed
+
+    @property
+    def settled_waiting(self) -> int:
+        """Return queued operations that left the waiting room during the interval."""
+        return (
+            self.admitted_from_queue
+            + self.cancelled_while_waiting
+            + self.expired
+            + self.closed_while_waiting
+        )
+
+    @property
+    def average_wait_seconds(self) -> float:
+        """Return average queue wait for interval admissions that waited."""
+        if self.admitted_from_queue == 0:
+            return 0.0
+        return self.cumulative_wait_seconds / self.admitted_from_queue
+
+    @property
+    def has_activity(self) -> bool:
+        """Return True when at least one cumulative metric changed."""
+        return any(
+            (
+                self.admitted,
+                self.abandoned_after_admission,
+                self.queued,
+                self.saturated,
+                self.expired,
+                self.expired_before_queue,
+                self.cancelled_while_waiting,
+                self.closed_before_queue,
+                self.closed_while_waiting,
+                self.finished,
+            )
+        )
+
+
+def _validate_interval_snapshots(start: BulkheadStatus, end: BulkheadStatus) -> None:
+    if start.label != end.label:
+        raise ValueError("status snapshots must belong to the same bulkhead label")
+    if start.waiting_room != end.waiting_room:
+        raise ValueError("status snapshots must use the same waiting-room capacity")
+    if start.is_closed and not end.is_closed:
+        raise ValueError("a later status cannot reopen a closed bulkhead")
+
+    monotonic_fields = (
+        "admitted_total",
+        "admitted_from_queue_total",
+        "abandoned_after_admission_total",
+        "queued_total",
+        "saturated_total",
+        "expired_total",
+        "expired_before_queue_total",
+        "cancelled_while_waiting_total",
+        "closed_before_queue_total",
+        "closed_while_waiting_total",
+        "finished_total",
+        "peak_in_flight",
+        "peak_waiting",
+        "cumulative_wait_seconds",
+        "longest_wait_seconds",
+    )
+    for field_name in monotonic_fields:
+        if getattr(end, field_name) < getattr(start, field_name):
+            raise ValueError(f"later status decreased cumulative field {field_name!r}")

@@ -8,6 +8,7 @@ from bulklink import (
     BulkheadClosedError,
     BulkheadEvent,
     BulkheadEventKind,
+    BulkheadInterval,
     BulkheadQueueTimeoutError,
     BulkheadRegistry,
     BulkheadRegistryFailure,
@@ -69,6 +70,22 @@ def test_public_enum_values_are_stable() -> None:
 
 
 def test_public_immutable_record_fields_are_stable() -> None:
+    assert _field_names(BulkheadInterval) == (
+        "start",
+        "end",
+        "admitted",
+        "admitted_from_queue",
+        "abandoned_after_admission",
+        "queued",
+        "saturated",
+        "expired",
+        "expired_before_queue",
+        "cancelled_while_waiting",
+        "closed_before_queue",
+        "closed_while_waiting",
+        "finished",
+        "cumulative_wait_seconds",
+    )
     assert _field_names(BulkheadStatus) == (
         "label",
         "parallelism",
@@ -182,4 +199,11 @@ def test_primary_calling_conventions_are_stable() -> None:
         ("parallelism", inspect.Parameter.KEYWORD_ONLY),
         ("waiting_room", inspect.Parameter.KEYWORD_ONLY),
         ("wait_limit", inspect.Parameter.KEYWORD_ONLY),
+    )
+
+
+def test_interval_calling_convention_is_stable() -> None:
+    assert _parameter_contract(BulkheadStatus.since) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("previous", inspect.Parameter.POSITIONAL_ONLY),
     )

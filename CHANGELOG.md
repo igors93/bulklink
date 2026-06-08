@@ -6,6 +6,20 @@ All notable changes to Bulklink will be documented in this file.
 
 No changes yet.
 
+## 0.4.0 - 2026-06-08
+
+### Added
+
+- `BulkheadStatus.since(previous)` for immutable interval metrics calculated from two
+  snapshots without resetting counters or creating background work.
+- `BulkheadInterval` with interval admissions, queue outcomes, rejections, completions,
+  wait totals, derived counts, and access to both endpoint snapshots.
+- Executable interval-metrics example and installed-wheel contract verification.
+
+### Changed
+
+- Promoted the documented compatibility contract to the `0.4.x` line.
+
 ## 0.3.0 - 2026-06-08
 
 ### Added

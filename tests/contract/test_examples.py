@@ -13,6 +13,7 @@ EXAMPLES = (
     "isolated_services.py",
     "overload_handling.py",
     "absolute_deadline.py",
+    "interval_metrics.py",
     "graceful_shutdown.py",
     "dynamic_capacity.py",
     "observability.py",

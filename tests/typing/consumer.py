@@ -5,6 +5,7 @@ import asyncio
 from bulklink import (
     AsyncBulkhead,
     BulkheadEvent,
+    BulkheadInterval,
     BulkheadRegistry,
     BulkheadStatus,
     CapacityReport,
@@ -38,7 +39,9 @@ async def consume_public_api() -> None:
     decorated = gate(render)
     decorated_result: str = await decorated(4)
 
+    previous_status: BulkheadStatus = await gate.status()
     status: BulkheadStatus = await gate.status()
+    interval: BulkheadInterval = status.since(previous_status)
     report: CapacityReport = await gate.capacity_report()
     await gate.resize(3)
     await gate.close_and_wait()
@@ -57,6 +60,7 @@ async def consume_public_api() -> None:
         slot_deadline_result,
         decorated_result,
         status,
+        interval,
         report,
         registered,
         statuses,

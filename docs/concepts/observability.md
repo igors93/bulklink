@@ -118,3 +118,16 @@ See [Capacity diagnostics](capacity-diagnostics.md).
 An absolute deadline that has already elapsed emits `EXPIRED` with `from_queue=False`
 and `waited_seconds=0.0`. Expiration after queue entry emits the same kind with
 `from_queue=True` and the measured queue wait.
+
+
+## Metrics between two snapshots
+
+```python
+before = await payments.status()
+after = await payments.status()
+interval = after.since(before)
+```
+
+`BulkheadInterval` reports only changes between the snapshots and keeps the original
+`start` and `end` states available. The calculation is synchronous and does not mutate the
+bulkhead or either snapshot. See [Interval metrics](interval-metrics.md).

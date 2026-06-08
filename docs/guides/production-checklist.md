@@ -9,7 +9,7 @@ Before deployment:
 5. Propagate an absolute event-loop deadline when a request already has a total budget.
 6. Configure network and database timeouts separately.
 7. Decide how saturation and queue expiration are translated at the application edge.
-8. Export `status()` values to metrics and review `capacity_report()` findings.
+8. Export `status()` values, compare snapshots with `since()`, and review `capacity_report()` findings.
 9. Keep event handlers synchronous, fast, and free of blocking I/O.
 10. Forward events with non-blocking queue operations when asynchronous export is needed.
 11. Use `close_and_wait()` during application shutdown.

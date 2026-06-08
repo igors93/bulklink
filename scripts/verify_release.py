@@ -156,6 +156,7 @@ from bulklink import (
     AsyncBulkhead,
     BulkheadEvent,
     BulkheadEventKind,
+    BulkheadInterval,
     BulkheadRegistry,
     BulkheadStatus,
 )
@@ -171,6 +172,7 @@ assert bulklink.__all__ == [
     "BulkheadEvent",
     "BulkheadEventHandler",
     "BulkheadEventKind",
+    "BulkheadInterval",
     "BulkheadQueueTimeoutError",
     "BulkheadRegistry",
     "BulkheadRegistryFailure",
@@ -206,6 +208,22 @@ assert tuple(field.name for field in fields(BulkheadEvent)) == (
     "affected_waiters",
     "previous_parallelism",
 )
+assert tuple(field.name for field in fields(BulkheadInterval)) == (
+    "start",
+    "end",
+    "admitted",
+    "admitted_from_queue",
+    "abandoned_after_admission",
+    "queued",
+    "saturated",
+    "expired",
+    "expired_before_queue",
+    "cancelled_while_waiting",
+    "closed_before_queue",
+    "closed_while_waiting",
+    "finished",
+    "cumulative_wait_seconds",
+)
 assert tuple(field.name for field in fields(BulkheadStatus)) == (
     "label",
     "parallelism",
@@ -235,6 +253,7 @@ async def main() -> None:
     events = []
     gate = AsyncBulkhead(label="installed", parallelism=1, waiting_room=1)
     gate.add_event_handler(events.append)
+    before = await gate.status()
     assert await gate.execute(asyncio.sleep, 0, result="ok") == "ok"
     loop = asyncio.get_running_loop()
     assert await gate.execute_before(
@@ -243,6 +262,10 @@ async def main() -> None:
         0,
         result="deadline-ok",
     ) == "deadline-ok"
+    interval = (await gate.status()).since(before)
+    assert interval.admitted == 2
+    assert interval.finished == 2
+    assert interval.has_activity
     await gate.resize(2)
     assert (await gate.status()).parallelism == 2
     assert (await gate.capacity_report()).status.label == "installed"

@@ -1,6 +1,6 @@
 # Public API
 
-The `0.3.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
+The `0.4.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
 
 Stable root imports:
 
@@ -15,6 +15,7 @@ from bulklink import (
     BulkheadEvent,
     BulkheadEventHandler,
     BulkheadEventKind,
+    BulkheadInterval,
     BulkheadQueueTimeoutError,
     BulkheadRegistry,
     BulkheadRegistryFailure,
@@ -125,3 +126,17 @@ Public operations:
 A collective operation attempts every selected member. If any fail,
 `BulkheadRegistryOperationError` contains immutable `BulkheadRegistryFailure` metadata
 for each failed label.
+
+
+## BulkheadInterval
+
+Create an interval from a later status snapshot:
+
+```python
+interval = current.since(previous)
+```
+
+The immutable result contains both endpoint snapshots and counter differences such as
+`admitted`, `queued`, `rejected`, `finished`, and `average_wait_seconds`. Comparing
+different labels, incompatible configurations, reversed counters, or a reopened lifecycle
+raises `ValueError`.

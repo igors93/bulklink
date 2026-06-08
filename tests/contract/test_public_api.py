@@ -14,6 +14,7 @@ def test_root_public_api_is_exact_and_small() -> None:
         "BulkheadEvent",
         "BulkheadEventHandler",
         "BulkheadEventKind",
+        "BulkheadInterval",
         "BulkheadQueueTimeoutError",
         "BulkheadRegistry",
         "BulkheadRegistryFailure",
@@ -25,4 +26,4 @@ def test_root_public_api_is_exact_and_small() -> None:
 
 
 def test_version_is_exposed() -> None:
-    assert bulklink.__version__ == "0.3.0"
+    assert bulklink.__version__ == "0.4.0"

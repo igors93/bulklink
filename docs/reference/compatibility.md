@@ -5,9 +5,9 @@ each supported version, with additional Windows and macOS validation. Release
 verification installs the built wheel into a clean virtual environment and checks its
 public typing and runtime contracts.
 
-## Stable `0.3.x` contract
+## Stable `0.4.x` contract
 
-Starting with `0.3.0`, patch releases preserve the documented public contract:
+Starting with `0.4.0`, patch releases preserve the documented public contract:
 
 - names and order exported by `bulklink.__all__`;
 - values of public enums;
@@ -46,4 +46,5 @@ release-process changes needed to validate the intended contract.
 - closed bulkheads cannot be resized or reopened;
 - registry names are unique and never silently replaced;
 - registry removal closes and drains before deleting membership;
-- collective registry shutdown prevents new creation and attempts every member.
+- collective registry shutdown prevents new creation and attempts every member;
+- interval metrics compare immutable snapshots without resetting cumulative counters.

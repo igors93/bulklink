@@ -195,3 +195,21 @@ result = await payments.execute_before(deadline, send_payment, order)
 ```
 
 The deadline limits only how long the call may wait for admission.
+
+## Compare activity between two moments
+
+```python
+before = await payments.status()
+
+# Run or observe application work.
+
+after = await payments.status()
+interval = after.since(before)
+
+print(interval.admitted)
+print(interval.rejected)
+print(interval.finished)
+```
+
+The comparison does not reset counters or start a background sampler. Store the earlier
+snapshot in the application and compare it with a later snapshot from the same bulkhead.

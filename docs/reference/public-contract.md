@@ -1,6 +1,6 @@
 # Stable public contract
 
-This document records the compatibility surface promoted with Bulklink `0.3.0`. The
+This document records the compatibility surface promoted with Bulklink `0.4.0`. The
 repository enforces the same contract with automated tests and installed-wheel release
 verification.
 
@@ -23,9 +23,10 @@ The protected enums are:
 
 ## Immutable records
 
-The fields of these frozen dataclasses are protected for `0.3.x` patch compatibility:
+The fields of these frozen dataclasses are protected for `0.4.x` patch compatibility:
 
 - `BulkheadStatus`;
+- `BulkheadInterval`;
 - `BulkheadEvent`;
 - `CapacityFinding`;
 - `CapacityReport`;
@@ -52,6 +53,13 @@ after it has started.
 
 ## Evolution before 1.0
 
-The `0.3.x` patch line is stable. A later minor release may add or intentionally revise
+The `0.4.x` patch line is stable. A later minor release may add or intentionally revise
 pre-1.0 APIs, but changes must be explicit, tested, and documented. Runtime dependencies
 remain zero unless a future design review demonstrates a compelling need.
+
+
+## Interval comparison
+
+`BulkheadStatus.since(previous)` is a pure comparison. It does not reset metrics or mutate
+either snapshot. The result contains nonnegative counter changes and both endpoint statuses.
+Invalid chronology or incompatible snapshots raise `ValueError`.

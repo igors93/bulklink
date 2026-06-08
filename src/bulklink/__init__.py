@@ -19,7 +19,7 @@ from bulklink.registry import (
     BulkheadRegistryFailure,
     BulkheadRegistryOperationError,
 )
-from bulklink.status import BulkheadStatus
+from bulklink.status import BulkheadInterval, BulkheadStatus
 
 __all__ = [
     "AsyncBulkhead",
@@ -31,6 +31,7 @@ __all__ = [
     "BulkheadEvent",
     "BulkheadEventHandler",
     "BulkheadEventKind",
+    "BulkheadInterval",
     "BulkheadQueueTimeoutError",
     "BulkheadRegistry",
     "BulkheadRegistryFailure",
@@ -40,4 +41,4 @@ __all__ = [
     "BulklinkError",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

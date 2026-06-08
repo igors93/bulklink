@@ -7,7 +7,7 @@
 Bulklink is a small, typed, zero-dependency library for bulkhead isolation and
 bounded concurrency in Python `asyncio` applications.
 
-Current package version: **0.3.0**. The documented `0.3.x` public contract is stable.
+Current package version: **0.4.0**. The documented `0.4.x` public contract is stable.
 
 </div>
 
@@ -143,6 +143,23 @@ The report combines the current snapshot with cumulative admission history. It i
 immutable, conservative with small samples, and never changes the bulkhead
 configuration.
 
+## Measure activity between snapshots
+
+```python
+before = await payments.status()
+
+# Later
+after = await payments.status()
+interval = after.since(before)
+
+print(interval.admitted)
+print(interval.rejected)
+print(interval.average_wait_seconds)
+```
+
+The interval is computed locally from immutable cumulative snapshots. Bulklink does not
+reset counters, retain historical windows, or create a background metrics task.
+
 ## Change capacity safely
 
 ```python
@@ -200,6 +217,7 @@ python -m pip install -e ".[dev]"
 - [Using Bulklink with Relinker](docs/guides/with-relinker.md)
 - [Production checklist](docs/guides/production-checklist.md)
 - [Capacity diagnostics](docs/concepts/capacity-diagnostics.md)
+- [Interval metrics](docs/concepts/interval-metrics.md)
 - [Dynamic capacity](docs/concepts/dynamic-capacity.md)
 - [Named bulkhead registry](docs/concepts/registry.md)
 - [Architecture](docs/maintainers/architecture.md)
@@ -210,7 +228,7 @@ MIT.
 
 ## Validation and benchmarks
 
-The release candidate is checked on Python 3.10 through 3.14 on Linux, with additional
+Bulklink is checked on Python 3.10 through 3.14 on Linux, with additional
 Windows and macOS validation. The suite includes deterministic race tests, generated
 model-oriented sequences, adversarial stress, executable examples, clean-wheel
 installation, and consumer-facing typing checks.

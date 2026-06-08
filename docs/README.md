@@ -16,6 +16,7 @@
 - [Dynamic capacity](concepts/dynamic-capacity.md)
 - [Named bulkhead registry](concepts/registry.md)
 - [Status and metrics](concepts/observability.md)
+- [Interval metrics](concepts/interval-metrics.md)
 
 ## Reference
 
