@@ -320,6 +320,8 @@ def test_capacity_contract_contains_no_operation_data() -> None:
 
 def make_status(**overrides: object) -> BulkheadStatus:
     values: dict[str, object] = {
+        "instance_id": "diagnostics-test",
+        "snapshot_index": 1,
         "label": "diagnostics",
         "parallelism": 1,
         "waiting_room": 0,

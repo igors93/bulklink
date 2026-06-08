@@ -14,6 +14,8 @@ async def assert_bulkhead_consistent(bulkhead: Any) -> None:
         waiters = tuple(coordinator._waiters)
         in_flight = coordinator._in_flight
 
+        assert len(coordinator._instance_id) == 32
+        assert coordinator._snapshot_index >= 0
         assert in_flight >= 0
         assert coordinator.parallelism > 0
         assert 0 <= len(waiters) <= coordinator.waiting_room

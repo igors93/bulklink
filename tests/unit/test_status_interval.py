@@ -113,20 +113,110 @@ async def test_interval_rejects_incompatible_or_reversed_snapshots() -> None:
     first = await first_gate.status()
     second = await second_gate.status()
 
-    with pytest.raises(ValueError, match="same bulkhead label"):
+    with pytest.raises(ValueError, match="same bulkhead instance"):
         second.since(first)
 
-    later = dataclasses.replace(first, admitted_total=1, finished_total=1)
+    higher_counters = dataclasses.replace(
+        first,
+        snapshot_index=first.snapshot_index + 1,
+        admitted_total=1,
+        finished_total=1,
+    )
+    lower_counters = dataclasses.replace(first, snapshot_index=first.snapshot_index + 2)
     with pytest.raises(ValueError, match="decreased cumulative field"):
-        first.since(later)
+        lower_counters.since(higher_counters)
 
-    changed_room = dataclasses.replace(first, waiting_room=2)
+    changed_room = dataclasses.replace(
+        first,
+        snapshot_index=first.snapshot_index + 1,
+        waiting_room=2,
+    )
     with pytest.raises(ValueError, match="same waiting-room capacity"):
         changed_room.since(first)
 
-    reopened = dataclasses.replace(first, is_closed=True)
+    closed = dataclasses.replace(
+        first,
+        snapshot_index=first.snapshot_index + 1,
+        is_closed=True,
+    )
+    reopened = dataclasses.replace(first, snapshot_index=first.snapshot_index + 2)
     with pytest.raises(ValueError, match="cannot reopen"):
-        first.since(reopened)
+        reopened.since(closed)
+
+
+async def test_status_snapshots_have_stable_identity_and_strict_sequence() -> None:
+    gate = AsyncBulkhead(label="snapshot-identity", parallelism=1)
+
+    first = await gate.status()
+    second = await gate.status()
+
+    assert first.instance_id == second.instance_id
+    assert first.instance_id
+    assert second.snapshot_index == first.snapshot_index + 1
+
+
+async def test_concurrent_status_snapshots_receive_unique_contiguous_indexes() -> None:
+    gate = AsyncBulkhead(label="concurrent-snapshots", parallelism=1)
+
+    snapshots = await asyncio.gather(*(gate.status() for _ in range(20)))
+    indexes = sorted(snapshot.snapshot_index for snapshot in snapshots)
+
+    assert len({snapshot.instance_id for snapshot in snapshots}) == 1
+    assert indexes == list(range(indexes[0], indexes[0] + len(indexes)))
+
+
+async def test_interval_rejects_different_instances_with_the_same_label() -> None:
+    first_gate = AsyncBulkhead(label="shared-label", parallelism=1, waiting_room=1)
+    second_gate = AsyncBulkhead(label="shared-label", parallelism=1, waiting_room=1)
+
+    before = await first_gate.status()
+    await second_gate.execute(asyncio.sleep, 0)
+    after = await second_gate.status()
+
+    with pytest.raises(ValueError, match="same bulkhead instance"):
+        after.since(before)
+
+
+async def test_interval_rejects_reversed_snapshots_without_counter_changes() -> None:
+    gate = AsyncBulkhead(label="reversed-resize", parallelism=1, waiting_room=1)
+    before = await gate.status()
+    await gate.resize(2)
+    after = await gate.status()
+
+    with pytest.raises(ValueError, match="chronological order"):
+        before.since(after)
+
+
+def test_interval_rejects_conflicting_snapshots_with_the_same_index() -> None:
+    gate_status = BulkheadStatus(
+        instance_id="test-instance",
+        snapshot_index=1,
+        label="same-index",
+        parallelism=1,
+        waiting_room=0,
+        in_flight=0,
+        waiting=0,
+        admitted_total=0,
+        admitted_from_queue_total=0,
+        abandoned_after_admission_total=0,
+        queued_total=0,
+        saturated_total=0,
+        expired_total=0,
+        expired_before_queue_total=0,
+        cancelled_while_waiting_total=0,
+        closed_before_queue_total=0,
+        closed_while_waiting_total=0,
+        finished_total=0,
+        peak_in_flight=0,
+        peak_waiting=0,
+        cumulative_wait_seconds=0.0,
+        longest_wait_seconds=0.0,
+        is_closed=False,
+    )
+    conflicting = dataclasses.replace(gate_status, parallelism=2)
+
+    with pytest.raises(ValueError, match="same index"):
+        conflicting.since(gate_status)
 
 
 async def test_interval_is_immutable_and_requires_a_status() -> None:

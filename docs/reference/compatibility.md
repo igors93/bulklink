@@ -47,4 +47,5 @@ release-process changes needed to validate the intended contract.
 - registry names are unique and never silently replaced;
 - registry removal closes and drains before deleting membership;
 - collective registry shutdown prevents new creation and attempts every member;
-- interval metrics compare immutable snapshots without resetting cumulative counters.
+- interval metrics compare immutable snapshots without resetting cumulative counters;
+- snapshot identity and sequence reject cross-instance and reversed interval comparisons.

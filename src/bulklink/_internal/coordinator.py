@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from secrets import token_hex
 from time import monotonic, time
 
 from bulklink._internal.cancellation import complete_cleanup
@@ -42,6 +43,8 @@ class AdmissionCoordinator:
         self._waiting_room = require_non_negative_integer("waiting_room", waiting_room)
         self._wait_limit = require_optional_positive_number("wait_limit", wait_limit)
 
+        self._instance_id = token_hex(16)
+        self._snapshot_index = 0
         self._mutex = asyncio.Lock()
         self._waiters: deque[WaitEntry] = deque()
         self._in_flight = 0
@@ -617,8 +620,11 @@ class AdmissionCoordinator:
         self._bind_to_running_loop()
 
         async with self._mutex:
+            self._snapshot_index += 1
             counters = self._counters
             return BulkheadStatus(
+                instance_id=self._instance_id,
+                snapshot_index=self._snapshot_index,
                 label=self._label,
                 parallelism=self._parallelism,
                 waiting_room=self._waiting_room,

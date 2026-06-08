@@ -87,6 +87,8 @@ def test_public_immutable_record_fields_are_stable() -> None:
         "cumulative_wait_seconds",
     )
     assert _field_names(BulkheadStatus) == (
+        "instance_id",
+        "snapshot_index",
         "label",
         "parallelism",
         "waiting_room",

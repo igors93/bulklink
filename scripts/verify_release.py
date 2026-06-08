@@ -225,6 +225,8 @@ assert tuple(field.name for field in fields(BulkheadInterval)) == (
     "cumulative_wait_seconds",
 )
 assert tuple(field.name for field in fields(BulkheadStatus)) == (
+    "instance_id",
+    "snapshot_index",
     "label",
     "parallelism",
     "waiting_room",
@@ -254,6 +256,9 @@ async def main() -> None:
     gate = AsyncBulkhead(label="installed", parallelism=1, waiting_room=1)
     gate.add_event_handler(events.append)
     before = await gate.status()
+    next_snapshot = await gate.status()
+    assert before.instance_id == next_snapshot.instance_id
+    assert next_snapshot.snapshot_index == before.snapshot_index + 1
     assert await gate.execute(asyncio.sleep, 0, result="ok") == "ok"
     loop = asyncio.get_running_loop()
     assert await gate.execute_before(
@@ -266,6 +271,13 @@ async def main() -> None:
     assert interval.admitted == 2
     assert interval.finished == 2
     assert interval.has_activity
+    other = AsyncBulkhead(label="installed", parallelism=1, waiting_room=1)
+    try:
+        (await other.status()).since(before)
+    except ValueError as error:
+        assert "same bulkhead instance" in str(error)
+    else:
+        raise AssertionError("different instances with the same label were accepted")
     await gate.resize(2)
     assert (await gate.status()).parallelism == 2
     assert (await gate.capacity_report()).status.label == "installed"

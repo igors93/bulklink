@@ -138,5 +138,5 @@ interval = current.since(previous)
 
 The immutable result contains both endpoint snapshots and counter differences such as
 `admitted`, `queued`, `rejected`, `finished`, and `average_wait_seconds`. Comparing
-different labels, incompatible configurations, reversed counters, or a reopened lifecycle
-raises `ValueError`.
+different instances, incompatible configurations, reversed snapshot order, conflicting
+snapshot identities, or a reopened lifecycle raises `ValueError`.

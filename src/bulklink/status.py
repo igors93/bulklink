@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
 class BulkheadStatus:
     """Read-only point-in-time description of one bulkhead."""
 
+    instance_id: str = field(compare=False, repr=False)
+    snapshot_index: int = field(compare=False)
     label: str
     parallelism: int
     waiting_room: int
@@ -215,8 +217,14 @@ class BulkheadInterval:
 
 
 def _validate_interval_snapshots(start: BulkheadStatus, end: BulkheadStatus) -> None:
+    if start.instance_id != end.instance_id:
+        raise ValueError("status snapshots must belong to the same bulkhead instance")
+    if end.snapshot_index < start.snapshot_index:
+        raise ValueError("status snapshots must be provided in chronological order")
+    if end.snapshot_index == start.snapshot_index and end != start:
+        raise ValueError("snapshots with the same index must be identical")
     if start.label != end.label:
-        raise ValueError("status snapshots must belong to the same bulkhead label")
+        raise ValueError("status snapshots from one instance must keep the same label")
     if start.waiting_room != end.waiting_room:
         raise ValueError("status snapshots must use the same waiting-room capacity")
     if start.is_closed and not end.is_closed:

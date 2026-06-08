@@ -61,5 +61,7 @@ remain zero unless a future design review demonstrates a compelling need.
 ## Interval comparison
 
 `BulkheadStatus.since(previous)` is a pure comparison. It does not reset metrics or mutate
-either snapshot. The result contains nonnegative counter changes and both endpoint statuses.
+either snapshot. Every status contains an opaque `instance_id` and a strictly increasing
+`snapshot_index`; these fields establish instance identity and chronology without storing
+operation data. The result contains nonnegative counter changes and both endpoint statuses.
 Invalid chronology or incompatible snapshots raise `ValueError`.

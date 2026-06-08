@@ -157,8 +157,10 @@ print(interval.rejected)
 print(interval.average_wait_seconds)
 ```
 
-The interval is computed locally from immutable cumulative snapshots. Bulklink does not
-reset counters, retain historical windows, or create a background metrics task.
+The interval is computed locally from immutable cumulative snapshots. Every snapshot
+carries an opaque instance identity and a strictly increasing sequence number, so
+cross-instance and reversed comparisons are rejected. Bulklink does not reset counters,
+retain historical windows, or create a background metrics task.
 
 ## Change capacity safely
 

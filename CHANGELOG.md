@@ -4,7 +4,11 @@ All notable changes to Bulklink will be documented in this file.
 
 ## Unreleased
 
-No changes yet.
+### Fixed
+
+- Interval comparisons now verify an opaque bulkhead instance identity and a strictly
+  increasing snapshot sequence, rejecting same-label cross-instance comparisons and
+  reversed snapshots even when cumulative counters are unchanged.
 
 ## 0.4.0 - 2026-06-08
 
