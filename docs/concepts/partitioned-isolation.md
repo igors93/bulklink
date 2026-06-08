@@ -62,6 +62,24 @@ The selected child uses the normal `AsyncBulkhead` guarantees:
 
 Deadlines control admission only and never cancel work after it starts.
 
+## Concurrency envelope
+
+`parallelism` and `waiting_room` are **per-partition** limits.  The global worst-case
+throughput across all retained partitions is:
+
+```
+maximum concurrent operations  = parallelism  × max_partitions (conservative upper bound)
+maximum queued operations       = waiting_room × max_partitions (conservative upper bound)
+```
+
+`max_partitions` controls cardinality and the memory footprint of the partition map.
+It does not limit total throughput by itself.  When a shared downstream resource has a
+fixed capacity — for example a connection pool or an upstream rate limit — set
+`parallelism` small enough that `parallelism × max_partitions` stays within that budget.
+
+`PartitionedBulkhead` is not a drop-in replacement for a single global bulkhead.
+Use it when isolation between partition keys matters more than a strict global ceiling.
+
 ## Manager metrics
 
 `status()` reports cardinality and lifecycle data without enumerating keys:

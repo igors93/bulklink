@@ -62,7 +62,8 @@ def test_ci_covers_supported_versions_platforms_and_release_verification() -> No
     assert "macos-latest" in text
     assert "python -m benchmarks.run" in text
     assert "python scripts/verify_release.py" in text
-    assert "actions/upload-artifact@v4" in text
+    # SHA-pinned; commit verified against actions/upload-artifact tag v4
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in text
     assert "platforms" in text
     assert "compatibility" in text
 
@@ -74,8 +75,10 @@ def test_release_workflow_uses_verified_artifacts_and_trusted_publishing() -> No
     assert "BULKLINK_RELEASE_TAG" in text
     assert "./scripts/ci.sh" in text
     assert "needs: build" in text
-    assert "actions/download-artifact@v4" in text
-    assert "pypa/gh-action-pypi-publish@release/v1" in text
+    # SHA-pinned; commits verified against actions/download-artifact v4
+    # and pypa/gh-action-pypi-publish release/v1 respectively
+    assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in text
+    assert "pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b" in text
     assert "name: pypi" in text
     assert "id-token: write" in text
     assert "password:" not in text

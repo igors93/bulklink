@@ -45,6 +45,10 @@ class PartitionCoordinator:
         self._mutex = asyncio.Lock()
         self._partitions: dict[Hashable, PartitionEntry] = {}
         self._leased_operations = 0
+        # Counts logical slots held by tasks that evicted a victim and are
+        # closing it before creating the replacement.  Included in capacity
+        # accounting so no other task can claim the slot being reclaimed.
+        self._reserved_slots = 0
         self._closed = False
         self._owner_loop: asyncio.AbstractEventLoop | None = None
         self._drained_event: asyncio.Event | None = None
@@ -98,36 +102,64 @@ class PartitionCoordinator:
         """Borrow one partition, creating or reclaiming capacity when necessary."""
         normalized = self.validated_key(key)
         loop = self._bind_to_running_loop()
+        # True once this task has removed a victim and incremented _reserved_slots.
+        # The reservation is the logical slot for the replacement; it prevents any
+        # other task from claiming the capacity we freed while we close the victim.
+        has_reservation = False
 
-        while True:
-            victim: PartitionEntry | None = None
-            async with self._mutex:
-                if self._closed:
-                    raise BulkheadClosedError(label=self._label)
+        try:
+            while True:
+                victim: PartitionEntry | None = None
+                async with self._mutex:
+                    if self._closed:
+                        raise BulkheadClosedError(label=self._label)
 
-                entry = self._partitions.get(normalized)
-                if entry is not None:
-                    self._borrow_locked(entry)
-                    return entry
+                    entry = self._partitions.get(normalized)
+                    if entry is not None:
+                        if has_reservation:
+                            self._reserved_slots -= 1
+                            has_reservation = False
+                        self._borrow_locked(entry)
+                        return entry
 
-                if len(self._partitions) < self._max_partitions:
-                    entry = self._create_locked(normalized, now=loop.time())
-                    self._borrow_locked(entry)
-                    return entry
+                    # has_reservation means _reserved_slots already accounts for this
+                    # task's slot; do not compete for capacity a second time.
+                    logical = len(self._partitions) + self._reserved_slots
+                    if has_reservation or logical < self._max_partitions:
+                        if has_reservation:
+                            self._reserved_slots -= 1
+                            has_reservation = False
+                        entry = self._create_locked(normalized, now=loop.time())
+                        self._borrow_locked(entry)
+                        return entry
 
-                victim = self._least_recent_idle_locked()
-                if victim is None:
-                    self._counters.limit_rejected_total += 1
-                    raise PartitionLimitError(
-                        label=self._label,
-                        max_partitions=self._max_partitions,
-                        active_partitions=self._active_partitions_locked(),
-                    )
+                    victim = self._least_recent_idle_locked()
+                    if victim is None:
+                        self._counters.limit_rejected_total += 1
+                        raise PartitionLimitError(
+                            label=self._label,
+                            max_partitions=self._max_partitions,
+                            active_partitions=self._active_partitions_locked(),
+                        )
 
-                del self._partitions[victim.key]
-                self._counters.evicted_total += 1
+                    # Reserve the freed slot before releasing the lock.  Any task
+                    # that checks capacity while we close the victim will see logical
+                    # at max_partitions and cannot steal the slot we are reclaiming.
+                    del self._partitions[victim.key]
+                    self._counters.evicted_total += 1
+                    self._reserved_slots += 1
+                    has_reservation = True
 
-            await complete_cleanup(victim.bulkhead.close_and_wait())
+                await complete_cleanup(victim.bulkhead.close_and_wait())
+                # Loop continues: next iteration creates the replacement entry.
+
+        except BaseException:
+            if has_reservation:
+                # Release the reservation on cancellation, closure, or any
+                # unexpected error so the slot is not permanently occupied.
+                async with self._mutex:
+                    self._reserved_slots -= 1
+            raise
 
     async def release_reference(self, entry: PartitionEntry) -> None:
         """Return one caller reference after child admission has fully ended."""

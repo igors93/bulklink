@@ -31,3 +31,10 @@ more memory.
 - Keep keys free of secrets when possible even though Bulklink does not render them.
 - Call `cleanup_idle()` from an application-owned maintenance loop when normal TTL cleanup is desired.
 - Treat `PartitionLimitError` as local admission pressure, not as a remote network failure.
+- Understand that `parallelism` and `waiting_room` are **per-partition** limits, not global ones.
+  The theoretical maximum concurrent operations across all partitions is
+  `parallelism × max_partitions`; the theoretical maximum queued operations is
+  `waiting_room × max_partitions`. Size both values with this envelope in mind when
+  a shared downstream resource has a fixed total capacity.
+- Do not rely on `max_partitions` alone to protect a downstream resource from overload.
+  A small `parallelism` per partition is the right lever for global throughput control.
