@@ -7,7 +7,7 @@
 Bulklink is a small, typed, zero-dependency library for bulkhead isolation and
 bounded concurrency in Python `asyncio` applications.
 
-Current package version: **0.4.0**. The documented `0.4.x` public contract is stable.
+Current package version: **0.5.0**. The documented `0.5.x` public contract is stable.
 
 </div>
 
@@ -100,6 +100,34 @@ For each bulkhead:
 7. `wait_closed()` waits until all active operations have released their slots;
 8. `resize()` changes capacity without cancelling active work or bypassing FIFO order;
 9. `execute_before()` rejects work whose absolute admission deadline has expired.
+
+## Weighted capacity
+
+Use `WeightedBulkhead` when operations have different known costs:
+
+```python
+from bulklink import WeightedBulkhead
+
+reports = WeightedBulkhead(
+    label="reports",
+    capacity=10,
+    waiting_room=20,
+    wait_limit=1.0,
+)
+
+async with reports.slot(4):
+    await generate_report()
+
+result = await reports.execute(2, load_summary)
+```
+
+Capacity and cost are positive integers. The waiting room is still measured in operations,
+and queued work remains strict FIFO: a smaller request never overtakes an earlier larger
+request. Reducing capacity below the largest queued cost is rejected so queued work cannot
+become impossible to admit.
+
+`AsyncBulkhead` remains unchanged and should be preferred when every operation consumes one
+slot.
 
 ## Graceful shutdown
 
@@ -220,6 +248,7 @@ python -m pip install -e ".[dev]"
 - [Production checklist](docs/guides/production-checklist.md)
 - [Capacity diagnostics](docs/concepts/capacity-diagnostics.md)
 - [Interval metrics](docs/concepts/interval-metrics.md)
+- [Weighted capacity](docs/concepts/weighted-capacity.md)
 - [Dynamic capacity](docs/concepts/dynamic-capacity.md)
 - [Named bulkhead registry](docs/concepts/registry.md)
 - [Architecture](docs/maintainers/architecture.md)

@@ -12,6 +12,7 @@ from bulklink.errors import (
     BulkheadQueueTimeoutError,
     BulkheadSaturatedError,
     BulklinkError,
+    WeightedBulkheadSaturatedError,
 )
 from bulklink.events import BulkheadEvent, BulkheadEventHandler, BulkheadEventKind
 from bulklink.registry import (
@@ -20,6 +21,9 @@ from bulklink.registry import (
     BulkheadRegistryOperationError,
 )
 from bulklink.status import BulkheadInterval, BulkheadStatus
+from bulklink.weighted import WeightedBulkhead
+from bulklink.weighted_events import WeightedBulkheadEvent, WeightedBulkheadEventHandler
+from bulklink.weighted_status import WeightedBulkheadInterval, WeightedBulkheadStatus
 
 __all__ = [
     "AsyncBulkhead",
@@ -39,6 +43,12 @@ __all__ = [
     "BulkheadSaturatedError",
     "BulkheadStatus",
     "BulklinkError",
+    "WeightedBulkhead",
+    "WeightedBulkheadEvent",
+    "WeightedBulkheadEventHandler",
+    "WeightedBulkheadInterval",
+    "WeightedBulkheadSaturatedError",
+    "WeightedBulkheadStatus",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"

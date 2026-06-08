@@ -22,8 +22,14 @@ def test_root_public_api_is_exact_and_small() -> None:
         "BulkheadSaturatedError",
         "BulkheadStatus",
         "BulklinkError",
+        "WeightedBulkhead",
+        "WeightedBulkheadEvent",
+        "WeightedBulkheadEventHandler",
+        "WeightedBulkheadInterval",
+        "WeightedBulkheadSaturatedError",
+        "WeightedBulkheadStatus",
     ]
 
 
 def test_version_is_exposed() -> None:
-    assert bulklink.__version__ == "0.4.0"
+    assert bulklink.__version__ == "0.5.0"

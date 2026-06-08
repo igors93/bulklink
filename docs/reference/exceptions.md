@@ -33,3 +33,13 @@ Raised only after every selected bulkhead has been attempted and at least one
 collective status, report, or lifecycle operation failed. The exception contains an
 immutable tuple of `BulkheadRegistryFailure` values with the label, exception type name,
 and exception message. It never contains protected operation arguments or results.
+
+## WeightedBulkheadSaturatedError
+
+Raised by weighted immediate admission, or regular weighted admission when the waiting room
+is full and the requested cost cannot start. It exposes `label`, `cost`, `used`, `capacity`,
+`waiting`, and `waiting_room`. It inherits from `BulklinkError` and does not imply that retry
+is safe.
+
+A cost greater than total current capacity raises `ValueError` instead because that request
+is impossible to admit under the current configuration.

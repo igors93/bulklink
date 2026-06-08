@@ -51,3 +51,28 @@ class BulkheadClosedError(BulklinkError):
     def __init__(self, *, label: str) -> None:
         self.label = label
         super().__init__(f"bulkhead {label!r} is closed")
+
+
+class WeightedBulkheadSaturatedError(BulklinkError):
+    """Raised when requested units cannot start and the waiting room is full."""
+
+    def __init__(
+        self,
+        *,
+        label: str,
+        cost: int,
+        used: int,
+        capacity: int,
+        waiting: int,
+        waiting_room: int,
+    ) -> None:
+        self.label = label
+        self.cost = cost
+        self.used = used
+        self.capacity = capacity
+        self.waiting = waiting
+        self.waiting_room = waiting_room
+        super().__init__(
+            f"weighted bulkhead {label!r} is saturated "
+            f"(cost={cost}, used={used}/{capacity}, waiting={waiting}/{waiting_room})"
+        )

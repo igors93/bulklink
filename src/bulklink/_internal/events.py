@@ -5,18 +5,19 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Callable, Iterable
-from typing import cast
+from typing import Generic, TypeVar, cast
 
-from bulklink.events import BulkheadEvent, BulkheadEventHandler
+EventT = TypeVar("EventT")
+EventHandler = Callable[[EventT], None]
 
 
-class EventDispatcher:
-    """Store synchronous handlers and isolate their failures from the bulkhead."""
+class EventDispatcher(Generic[EventT]):
+    """Store synchronous handlers and isolate their failures from protected state."""
 
     def __init__(self) -> None:
-        self._handlers: tuple[BulkheadEventHandler, ...] = ()
+        self._handlers: tuple[EventHandler[EventT], ...] = ()
 
-    def add(self, handler: BulkheadEventHandler) -> None:
+    def add(self, handler: EventHandler[EventT]) -> None:
         """Register one synchronous handler exactly once by identity."""
         if not callable(handler):
             raise TypeError("event handler must be callable")
@@ -26,11 +27,11 @@ class EventDispatcher:
             return
         self._handlers = (*self._handlers, handler)
 
-    def remove(self, handler: BulkheadEventHandler) -> None:
+    def remove(self, handler: EventHandler[EventT]) -> None:
         """Remove one handler by identity; missing handlers are ignored."""
         self._handlers = tuple(existing for existing in self._handlers if existing is not handler)
 
-    def dispatch(self, events: Iterable[BulkheadEvent]) -> None:
+    def dispatch(self, events: Iterable[EventT]) -> None:
         """Invoke a stable handler snapshot without propagating handler failures."""
         handlers = self._handlers
         if not handlers:
@@ -40,7 +41,7 @@ class EventDispatcher:
         for event in events:
             for handler in handlers:
                 try:
-                    callback = cast(Callable[[BulkheadEvent], object], handler)
+                    callback = cast(Callable[[EventT], object], handler)
                     result = callback(event)
                     if inspect.isawaitable(result):
                         if inspect.iscoroutine(result):
@@ -54,7 +55,7 @@ class EventDispatcher:
     @staticmethod
     def _report_failure(
         loop: asyncio.AbstractEventLoop,
-        event: BulkheadEvent,
+        event: EventT,
         error: BaseException,
     ) -> None:
         context = {
@@ -65,5 +66,4 @@ class EventDispatcher:
         try:
             loop.call_exception_handler(context)
         except BaseException:
-            # A custom loop exception handler must not compromise bulkhead state.
             return

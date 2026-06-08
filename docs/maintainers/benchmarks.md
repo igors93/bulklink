@@ -27,3 +27,9 @@ events, status snapshots, and approximate memory allocated per queued waiter.
 Compare results only on equivalent Python versions, operating systems, hardware, and
 power settings. Do not reject a release from a single noisy timing sample. Investigate
 persistent regressions across repeated runs instead.
+
+## Weighted baseline
+
+The `weighted_execute` scenario measures admission and release with integer costs cycling
+from one through four. It is a regression baseline only; normal operating-system noise must
+not become a strict release threshold.

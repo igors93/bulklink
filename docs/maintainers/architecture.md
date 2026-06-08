@@ -114,3 +114,24 @@ Synchronous handlers avoid background task ownership, shutdown races, and unobse
 coroutine failures inside the library. Applications that need asynchronous export can
 forward immutable events into their own queue with `put_nowait()`, keeping lifecycle
 control with the application.
+
+## Weighted admission
+
+`WeightedBulkhead` uses a separate `WeightedAdmissionCoordinator` because capacity units and
+operation counts are distinct invariants. It reuses the same slot lifecycle, cancellation
+cleanup, event-dispatch isolation, validation helpers, wait-state model, and exception base
+hierarchy as `AsyncBulkhead`.
+
+The weighted coordinator owns:
+
+- current used units and active operation count;
+- strict-FIFO entries carrying one immutable integer cost;
+- current and cumulative waiting units;
+- weighted operation and unit counters;
+- opaque snapshot identity and sequence;
+- graceful close and drain state.
+
+A queued entry is admitted only when it is at the head and its complete cost fits. Partial
+allocation is forbidden. Resize-down is rejected when it would make an existing queued cost
+larger than total capacity. This prevents permanent head-of-line impossibility while keeping
+active work cancellation-free.

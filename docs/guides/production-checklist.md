@@ -12,7 +12,9 @@ Before deployment:
 8. Export `status()` values, compare snapshots with `since()`, and review `capacity_report()` findings.
 9. Keep event handlers synchronous, fast, and free of blocking I/O.
 10. Forward events with non-blocking queue operations when asynchronous export is needed.
-11. Use `close_and_wait()` during application shutdown.
+11. Keep weighted costs small, documented, and based on stable application knowledge.
+12. Never use weighted costs as priorities; FIFO remains strict.
+13. Use `close_and_wait()` during application shutdown.
 12. Test cancellation of shutdown waiters without cancelling protected work.
 13. Avoid automatically retrying overload rejections.
 14. Load test with realistic latency and error rates.

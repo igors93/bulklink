@@ -1,6 +1,6 @@
 # Public API
 
-The `0.4.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
+The `0.5.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
 
 Stable root imports:
 
@@ -23,6 +23,12 @@ from bulklink import (
     BulkheadSaturatedError,
     BulkheadStatus,
     BulklinkError,
+    WeightedBulkhead,
+    WeightedBulkheadEvent,
+    WeightedBulkheadEventHandler,
+    WeightedBulkheadInterval,
+    WeightedBulkheadSaturatedError,
+    WeightedBulkheadStatus,
 )
 ```
 
@@ -71,6 +77,39 @@ prevent other waiters from completing.
 Reductions never cancel active work and may temporarily make `utilization` exceed 1.0.
 Resizing to the current value is a no-op, and resizing after closing raises
 `BulkheadClosedError`.
+
+
+## WeightedBulkhead
+
+```python
+WeightedBulkhead(
+    *,
+    label: str,
+    capacity: int,
+    waiting_room: int = 0,
+    wait_limit: float | None = None,
+)
+```
+
+Primary operations:
+
+- `slot(cost=1)` waits for the requested integer capacity cost;
+- `slot_now(cost=1)` rejects instead of queueing;
+- `slot_within(limit, cost=1)` applies a stricter relative queue limit;
+- `slot_before(deadline, cost=1)` applies an absolute event-loop deadline;
+- `execute(cost, operation, *args, **kwargs)` protects one async call;
+- `execute_now`, `execute_within`, and `execute_before` provide matching admission modes;
+- `status()` returns `WeightedBulkheadStatus`;
+- `resize(capacity)` changes capacity without cancelling admitted work;
+- `close()`, `wait_closed()`, and `close_and_wait()` provide graceful shutdown.
+
+Costs and capacity are positive integers. A cost greater than the current capacity is
+invalid. Queueing is strict FIFO: smaller requests never overtake earlier larger requests.
+A resize reduction below the largest queued cost is rejected so queued work cannot become
+permanently impossible to admit.
+
+`WeightedBulkheadEvent` uses `BulkheadEventKind` and exposes only capacity, cost, queue, and
+timing metadata. `WeightedBulkheadInterval` compares two immutable weighted status snapshots.
 
 ## Private modules
 

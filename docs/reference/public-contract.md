@@ -1,6 +1,6 @@
 # Stable public contract
 
-This document records the compatibility surface promoted with Bulklink `0.4.0`. The
+This document records the compatibility surface promoted with Bulklink `0.5.0`. The
 repository enforces the same contract with automated tests and installed-wheel release
 verification.
 
@@ -23,14 +23,17 @@ The protected enums are:
 
 ## Immutable records
 
-The fields of these frozen dataclasses are protected for `0.4.x` patch compatibility:
+The fields of these frozen dataclasses are protected for `0.5.x` patch compatibility:
 
 - `BulkheadStatus`;
 - `BulkheadInterval`;
 - `BulkheadEvent`;
 - `CapacityFinding`;
 - `CapacityReport`;
-- `BulkheadRegistryFailure`.
+- `BulkheadRegistryFailure`;
+- `WeightedBulkheadStatus`;
+- `WeightedBulkheadInterval`;
+- `WeightedBulkheadEvent`.
 
 Patch releases may fix the values produced by these records, but must not silently
 remove, rename, reorder, or change the meaning of their documented fields.
@@ -40,6 +43,8 @@ remove, rename, reorder, or change the meaning of their documented fields.
 All Bulklink-generated operational errors inherit from `BulklinkError`.
 `BulkheadQueueTimeoutError` deliberately does not inherit from `TimeoutError`, preventing
 generic network-timeout retry policies from treating local overload as a remote timeout.
+`WeightedBulkheadSaturatedError` is the weighted immediate/full-queue overload signal and
+also inherits from `BulklinkError`.
 
 ## Calling conventions
 
@@ -53,7 +58,7 @@ after it has started.
 
 ## Evolution before 1.0
 
-The `0.4.x` patch line is stable. A later minor release may add or intentionally revise
+The `0.5.x` patch line is stable. A later minor release may add or intentionally revise
 pre-1.0 APIs, but changes must be explicit, tested, and documented. Runtime dependencies
 remain zero unless a future design review demonstrates a compelling need.
 
@@ -65,3 +70,11 @@ either snapshot. Every status contains an opaque `instance_id` and a strictly in
 `snapshot_index`; these fields establish instance identity and chronology without storing
 operation data. The result contains nonnegative counter changes and both endpoint statuses.
 Invalid chronology or incompatible snapshots raise `ValueError`.
+
+
+## Weighted admission
+
+`WeightedBulkhead` uses positive integer capacity and costs. FIFO order is strict and does
+not allow smaller requests to overtake. Reducing capacity below active usage is allowed and
+drains naturally; reducing it below the largest queued cost is rejected. Weighted status,
+interval, and event records contain only capacity and timing metadata.

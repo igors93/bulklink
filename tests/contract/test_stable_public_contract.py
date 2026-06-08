@@ -20,6 +20,11 @@ from bulklink import (
     CapacityFindingCode,
     CapacityReport,
     CapacitySeverity,
+    WeightedBulkhead,
+    WeightedBulkheadEvent,
+    WeightedBulkheadInterval,
+    WeightedBulkheadSaturatedError,
+    WeightedBulkheadStatus,
 )
 
 
@@ -111,6 +116,77 @@ def test_public_immutable_record_fields_are_stable() -> None:
         "longest_wait_seconds",
         "is_closed",
     )
+    assert _field_names(WeightedBulkheadInterval) == (
+        "start",
+        "end",
+        "admitted",
+        "admitted_units",
+        "admitted_from_queue",
+        "admitted_from_queue_units",
+        "abandoned_after_admission",
+        "abandoned_units",
+        "queued",
+        "queued_units",
+        "saturated",
+        "expired",
+        "expired_before_queue",
+        "cancelled_while_waiting",
+        "closed_before_queue",
+        "closed_while_waiting",
+        "finished",
+        "finished_units",
+        "cumulative_wait_seconds",
+    )
+    assert _field_names(WeightedBulkheadStatus) == (
+        "instance_id",
+        "snapshot_index",
+        "label",
+        "capacity",
+        "waiting_room",
+        "used",
+        "in_flight",
+        "waiting",
+        "waiting_units",
+        "admitted_total",
+        "admitted_units_total",
+        "admitted_from_queue_total",
+        "admitted_from_queue_units_total",
+        "abandoned_after_admission_total",
+        "abandoned_units_total",
+        "queued_total",
+        "queued_units_total",
+        "saturated_total",
+        "expired_total",
+        "expired_before_queue_total",
+        "cancelled_while_waiting_total",
+        "closed_before_queue_total",
+        "closed_while_waiting_total",
+        "finished_total",
+        "finished_units_total",
+        "peak_used",
+        "peak_in_flight",
+        "peak_waiting",
+        "peak_waiting_units",
+        "cumulative_wait_seconds",
+        "longest_wait_seconds",
+        "is_closed",
+    )
+    assert _field_names(WeightedBulkheadEvent) == (
+        "kind",
+        "label",
+        "occurred_at",
+        "capacity",
+        "waiting_room",
+        "used",
+        "in_flight",
+        "waiting",
+        "is_closed",
+        "cost",
+        "from_queue",
+        "waited_seconds",
+        "affected_waiters",
+        "previous_capacity",
+    )
     assert _field_names(BulkheadEvent) == (
         "kind",
         "label",
@@ -149,6 +225,7 @@ def test_public_exception_hierarchy_is_stable() -> None:
     assert issubclass(BulkheadSaturatedError, BulklinkError)
     assert issubclass(BulkheadQueueTimeoutError, BulklinkError)
     assert issubclass(BulkheadRegistryOperationError, BulklinkError)
+    assert issubclass(WeightedBulkheadSaturatedError, BulklinkError)
     assert not issubclass(BulkheadQueueTimeoutError, TimeoutError)
 
 
@@ -201,6 +278,50 @@ def test_primary_calling_conventions_are_stable() -> None:
         ("parallelism", inspect.Parameter.KEYWORD_ONLY),
         ("waiting_room", inspect.Parameter.KEYWORD_ONLY),
         ("wait_limit", inspect.Parameter.KEYWORD_ONLY),
+    )
+
+
+def test_weighted_calling_conventions_are_stable() -> None:
+    assert _parameter_contract(WeightedBulkhead.__init__) == (
+        ("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        ("label", inspect.Parameter.KEYWORD_ONLY),
+        ("capacity", inspect.Parameter.KEYWORD_ONLY),
+        ("waiting_room", inspect.Parameter.KEYWORD_ONLY),
+        ("wait_limit", inspect.Parameter.KEYWORD_ONLY),
+    )
+    assert _parameter_contract(WeightedBulkhead.execute) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("cost", inspect.Parameter.POSITIONAL_ONLY),
+        ("operation", inspect.Parameter.POSITIONAL_ONLY),
+        ("args", inspect.Parameter.VAR_POSITIONAL),
+        ("kwargs", inspect.Parameter.VAR_KEYWORD),
+    )
+    assert _parameter_contract(WeightedBulkhead.execute_now) == _parameter_contract(
+        WeightedBulkhead.execute
+    )
+    assert _parameter_contract(WeightedBulkhead.execute_within) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("wait_limit", inspect.Parameter.POSITIONAL_ONLY),
+        ("cost", inspect.Parameter.POSITIONAL_ONLY),
+        ("operation", inspect.Parameter.POSITIONAL_ONLY),
+        ("args", inspect.Parameter.VAR_POSITIONAL),
+        ("kwargs", inspect.Parameter.VAR_KEYWORD),
+    )
+    assert _parameter_contract(WeightedBulkhead.execute_before) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("deadline", inspect.Parameter.POSITIONAL_ONLY),
+        ("cost", inspect.Parameter.POSITIONAL_ONLY),
+        ("operation", inspect.Parameter.POSITIONAL_ONLY),
+        ("args", inspect.Parameter.VAR_POSITIONAL),
+        ("kwargs", inspect.Parameter.VAR_KEYWORD),
+    )
+    assert _parameter_contract(WeightedBulkhead.slot) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("cost", inspect.Parameter.POSITIONAL_ONLY),
+    )
+    assert _parameter_contract(WeightedBulkhead.resize) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("capacity", inspect.Parameter.POSITIONAL_ONLY),
     )
 
 

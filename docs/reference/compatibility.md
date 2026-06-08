@@ -5,9 +5,9 @@ each supported version, with additional Windows and macOS validation. Release
 verification installs the built wheel into a clean virtual environment and checks its
 public typing and runtime contracts.
 
-## Stable `0.4.x` contract
+## Stable `0.5.x` contract
 
-Starting with `0.4.0`, patch releases preserve the documented public contract:
+Starting with `0.5.0`, patch releases preserve the documented public contract:
 
 - names and order exported by `bulklink.__all__`;
 - values of public enums;
@@ -49,3 +49,6 @@ release-process changes needed to validate the intended contract.
 - collective registry shutdown prevents new creation and attempts every member;
 - interval metrics compare immutable snapshots without resetting cumulative counters;
 - snapshot identity and sequence reject cross-instance and reversed interval comparisons.
+- weighted admission preserves strict FIFO across different integer costs;
+- weighted resize never cancels active work and never strands a queued cost;
+- weighted snapshots use opaque identity and strict sequence validation.

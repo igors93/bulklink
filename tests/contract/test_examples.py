@@ -14,6 +14,7 @@ EXAMPLES = (
     "overload_handling.py",
     "absolute_deadline.py",
     "interval_metrics.py",
+    "weighted_capacity.py",
     "graceful_shutdown.py",
     "dynamic_capacity.py",
     "observability.py",

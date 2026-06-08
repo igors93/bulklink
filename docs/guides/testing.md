@@ -48,3 +48,10 @@ Run the complete local verification with:
 
 On Windows PowerShell, execute the individual Python commands documented in
 `CONTRIBUTING.md` because `ci.sh` is a POSIX shell script.
+
+
+## Deterministic plugin loading
+
+`scripts/ci.sh` disables automatic discovery of unrelated globally installed pytest
+plugins and explicitly loads only `pytest-asyncio` and `pytest-cov`. This prevents a local
+IDE, tracing agent, or unrelated test plugin from changing Bulklink's test behavior.

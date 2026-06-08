@@ -213,3 +213,17 @@ print(interval.finished)
 
 The comparison does not reset counters or start a background sampler. Store the earlier
 snapshot in the application and compare it with a later snapshot from the same bulkhead.
+
+
+## Different operation costs
+
+Use `WeightedBulkhead` only when operations have explicit different capacity costs:
+
+```python
+from bulklink import WeightedBulkhead
+
+reports = WeightedBulkhead(label="reports", capacity=10, waiting_room=20)
+result = await reports.execute(4, generate_report, request)
+```
+
+Continue using `AsyncBulkhead` when every operation should consume one slot.

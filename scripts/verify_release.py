@@ -26,6 +26,9 @@ _REQUIRED_WHEEL_FILES = {
     "bulklink/bulkhead.py",
     "bulklink/py.typed",
     "bulklink/registry.py",
+    "bulklink/weighted.py",
+    "bulklink/weighted_events.py",
+    "bulklink/weighted_status.py",
 }
 _REQUIRED_SDIST_SUFFIXES = {
     "LICENSE",
@@ -159,6 +162,10 @@ from bulklink import (
     BulkheadInterval,
     BulkheadRegistry,
     BulkheadStatus,
+    WeightedBulkhead,
+    WeightedBulkheadEvent,
+    WeightedBulkheadInterval,
+    WeightedBulkheadStatus,
 )
 
 assert bulklink.__version__ == {version!r}
@@ -180,6 +187,12 @@ assert bulklink.__all__ == [
     "BulkheadSaturatedError",
     "BulkheadStatus",
     "BulklinkError",
+    "WeightedBulkhead",
+    "WeightedBulkheadEvent",
+    "WeightedBulkheadEventHandler",
+    "WeightedBulkheadInterval",
+    "WeightedBulkheadSaturatedError",
+    "WeightedBulkheadStatus",
 ]
 assert [member.value for member in BulkheadEventKind] == [
     "admitted",
@@ -223,6 +236,77 @@ assert tuple(field.name for field in fields(BulkheadInterval)) == (
     "closed_while_waiting",
     "finished",
     "cumulative_wait_seconds",
+)
+assert tuple(field.name for field in fields(WeightedBulkheadEvent)) == (
+    "kind",
+    "label",
+    "occurred_at",
+    "capacity",
+    "waiting_room",
+    "used",
+    "in_flight",
+    "waiting",
+    "is_closed",
+    "cost",
+    "from_queue",
+    "waited_seconds",
+    "affected_waiters",
+    "previous_capacity",
+)
+assert tuple(field.name for field in fields(WeightedBulkheadInterval)) == (
+    "start",
+    "end",
+    "admitted",
+    "admitted_units",
+    "admitted_from_queue",
+    "admitted_from_queue_units",
+    "abandoned_after_admission",
+    "abandoned_units",
+    "queued",
+    "queued_units",
+    "saturated",
+    "expired",
+    "expired_before_queue",
+    "cancelled_while_waiting",
+    "closed_before_queue",
+    "closed_while_waiting",
+    "finished",
+    "finished_units",
+    "cumulative_wait_seconds",
+)
+assert tuple(field.name for field in fields(WeightedBulkheadStatus)) == (
+    "instance_id",
+    "snapshot_index",
+    "label",
+    "capacity",
+    "waiting_room",
+    "used",
+    "in_flight",
+    "waiting",
+    "waiting_units",
+    "admitted_total",
+    "admitted_units_total",
+    "admitted_from_queue_total",
+    "admitted_from_queue_units_total",
+    "abandoned_after_admission_total",
+    "abandoned_units_total",
+    "queued_total",
+    "queued_units_total",
+    "saturated_total",
+    "expired_total",
+    "expired_before_queue_total",
+    "cancelled_while_waiting_total",
+    "closed_before_queue_total",
+    "closed_while_waiting_total",
+    "finished_total",
+    "finished_units_total",
+    "peak_used",
+    "peak_in_flight",
+    "peak_waiting",
+    "peak_waiting_units",
+    "cumulative_wait_seconds",
+    "longest_wait_seconds",
+    "is_closed",
 )
 assert tuple(field.name for field in fields(BulkheadStatus)) == (
     "instance_id",
@@ -283,6 +367,27 @@ async def main() -> None:
     assert (await gate.capacity_report()).status.label == "installed"
     await gate.close_and_wait()
     assert events[0].kind is BulkheadEventKind.ADMITTED
+
+
+    weighted_events = []
+    weighted = WeightedBulkhead(
+        label="installed-weighted",
+        capacity=5,
+        waiting_room=2,
+        wait_limit=1.0,
+    )
+    weighted.add_event_handler(weighted_events.append)
+    weighted_before = await weighted.status()
+    assert await weighted.execute(3, asyncio.sleep, 0, result="weighted-ok") == "weighted-ok"
+    weighted_after = await weighted.status()
+    weighted_interval = weighted_after.since(weighted_before)
+    assert weighted_interval.admitted == 1
+    assert weighted_interval.admitted_units == 3
+    assert weighted_interval.finished_units == 3
+    await weighted.resize(6)
+    assert (await weighted.status()).capacity == 6
+    await weighted.close_and_wait()
+    assert weighted_events[0].kind is BulkheadEventKind.ADMITTED
 
     registry = BulkheadRegistry()
     registry.create("member", parallelism=1)

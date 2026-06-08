@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter_ns
 from typing import Any
 
-from bulklink import AsyncBulkhead
+from bulklink import AsyncBulkhead, WeightedBulkhead
 
 Scenario = Callable[[int], Awaitable[None]]
 
@@ -38,6 +38,13 @@ async def _slot(iterations: int) -> None:
     for _ in range(iterations):
         async with gate.slot():
             pass
+    await gate.close_and_wait()
+
+
+async def _weighted_execute(iterations: int) -> None:
+    gate = WeightedBulkhead(label="benchmark-weighted-execute", capacity=4)
+    for index in range(iterations):
+        await gate.execute((index % 4) + 1, _noop)
     await gate.close_and_wait()
 
 
@@ -82,6 +89,7 @@ SCENARIOS: dict[str, Scenario] = {
     "direct": _direct,
     "execute": _execute,
     "slot": _slot,
+    "weighted_execute": _weighted_execute,
     "events": _events,
     "status": _status,
     "handoff": _handoff,

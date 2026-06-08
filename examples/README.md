@@ -8,6 +8,7 @@ python -m examples.isolated_services
 python -m examples.overload_handling
 python -m examples.absolute_deadline
 python -m examples.interval_metrics
+python -m examples.weighted_capacity
 python -m examples.graceful_shutdown
 python -m examples.dynamic_capacity
 python -m examples.observability

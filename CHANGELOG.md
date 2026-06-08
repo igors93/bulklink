@@ -4,11 +4,28 @@ All notable changes to Bulklink will be documented in this file.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.5.0 - 2026-06-08
+
+### Added
+
+- `WeightedBulkhead` for strict-FIFO admission where each operation consumes a positive
+  integer capacity cost.
+- Weighted status, interval metrics, lifecycle events, saturation errors, deadlines,
+  cancellation-safe handoff, resizing, and graceful shutdown.
+- Executable weighted-capacity example, stress coverage, typing checks, and installed-wheel
+  release verification.
+
 ### Fixed
 
 - Interval comparisons now verify an opaque bulkhead instance identity and a strictly
   increasing snapshot sequence, rejecting same-label cross-instance comparisons and
   reversed snapshots even when cumulative counters are unchanged.
+
+### Changed
+
+- Promoted the documented compatibility contract to the `0.5.x` line.
 
 ## 0.4.0 - 2026-06-08
 

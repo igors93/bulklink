@@ -131,3 +131,10 @@ interval = after.since(before)
 `BulkheadInterval` reports only changes between the snapshots and keeps the original
 `start` and `end` states available. The calculation is synchronous and does not mutate the
 bulkhead or either snapshot. See [Interval metrics](interval-metrics.md).
+
+## Weighted observability
+
+`WeightedBulkheadEvent` reuses `BulkheadEventKind` and replaces slot-oriented fields with
+`capacity`, `used`, and the affected operation `cost`. `WeightedBulkheadStatus` reports both
+operation counts and capacity-unit totals. Neither record contains operation arguments,
+results, exceptions, customer identifiers, or automatically estimated costs.
