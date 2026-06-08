@@ -11,7 +11,7 @@ from bulklink import (
     PartitionedBulkhead,
     PartitionLimitError,
 )
-from tests.helpers import eventually
+from tests.helpers import ObservableLock, eventually, wait_for_lock_waiters
 
 
 async def test_different_keys_receive_independent_execution_capacity() -> None:
@@ -323,9 +323,13 @@ async def test_partition_eviction_reserves_capacity_for_replacement() -> None:
 
     results = await asyncio.wait_for(asyncio.gather(t1, t2, return_exceptions=True), timeout=5.0)
 
-    # T1 must never receive a spurious PartitionLimitError.
-    assert not isinstance(results[0], PartitionLimitError), (
-        "T1 got spurious PartitionLimitError — eviction race is present"
+    # T1 initiated eviction; it must succeed unconditionally.
+    assert results[0] is None, f"T1 failed: {results[0]}"
+
+    # T2 raced into the open slot.  The reservation must block it with PartitionLimitError,
+    # not allow it to succeed and starve T1.
+    assert isinstance(results[1], PartitionLimitError), (
+        f"T2 got unexpected result {results[1]!r}; expected PartitionLimitError"
     )
 
     status = await gate.status()
@@ -436,15 +440,23 @@ async def test_concurrent_requests_for_same_new_key_create_one_partition() -> No
 
     results = await asyncio.wait_for(asyncio.gather(t1, t2, return_exceptions=True), timeout=5.0)
 
-    # Neither task may raise an unexpected exception type.
-    for result in results:
-        assert result is None or isinstance(result, PartitionLimitError), repr(result)
+    # T1 initiated eviction; it must succeed.
+    assert results[0] is None, f"T1 failed: {results[0]}"
+
+    # T2 also wants the same key B.  With max_partitions=1 and T1's reservation consuming
+    # the only logical slot, T2 must receive PartitionLimitError (no idle victim to evict).
+    assert isinstance(results[1], PartitionLimitError), (
+        f"T2 got unexpected result {results[1]!r}; expected PartitionLimitError"
+    )
 
     coordinator = gate._coordinator  # type: ignore[attr-defined]
     assert coordinator._reserved_slots == 0
 
     status = await gate.status()
-    assert status.partition_count <= status.max_partitions
+    # One partition created for the victim ("existing"), one for the replacement ("B").
+    assert status.created_total == 2, f"expected 2 created, got {status.created_total}"
+    assert status.evicted_total == 1, f"expected 1 evicted, got {status.evicted_total}"
+    assert status.partition_count == 1
     assert status.leased_operations == 0
     await gate.close_and_wait()
 
@@ -467,11 +479,14 @@ async def test_concurrent_different_keys_single_evictable_slot() -> None:
 
     results = await asyncio.wait_for(asyncio.gather(t1, t2, return_exceptions=True), timeout=5.0)
 
-    # T1 must succeed (it initiated the eviction).
+    # T1 initiated the eviction; it owns the reservation and must succeed.
     assert results[0] is None, f"T1 failed: {results[0]}"
 
-    # T2 must either succeed (if capacity opened later) or fail cleanly.
-    assert results[1] is None or isinstance(results[1], PartitionLimitError)
+    # T2 wants a different key C.  T1's reservation consumes the only logical slot;
+    # no idle victim remains (victim was already removed by T1), so T2 gets PartitionLimitError.
+    assert isinstance(results[1], PartitionLimitError), (
+        f"T2 got unexpected result {results[1]!r}; expected PartitionLimitError"
+    )
 
     coordinator = gate._coordinator  # type: ignore[attr-defined]
     assert coordinator._reserved_slots == 0
@@ -553,3 +568,149 @@ async def test_eviction_counters_remain_coherent() -> None:
     assert status.leased_operations == 0
 
     await gate.close_and_wait()
+
+
+# ---------------------------------------------------------------------------
+# Correction 4: repeated cancellation must not leak a reservation
+# ---------------------------------------------------------------------------
+
+
+async def test_repeated_cancellation_does_not_leak_reservation() -> None:
+    """Two cancel() calls while T1 is inside rollback must not leave _reserved_slots > 0.
+
+    Scenario:
+      1. T1 acquires reservation (victim removed, _reserved_slots = 1).
+      2. T1 is cancelled during close_and_wait(); complete_cleanup absorbs it.
+      3. We hold the manager mutex so T1's rollback blocks when it tries to acquire it.
+      4. T1 is cancelled a second time while blocked in the rollback.
+      5. The rollback must still complete (complete_cleanup protects it).
+      6. After the mutex is released, _reserved_slots must be 0.
+    """
+    gate = PartitionedBulkhead(label="double-cancel", parallelism=1, max_partitions=1)
+    await gate.execute("A", asyncio.sleep, 0)
+
+    # Replace the coordinator mutex with an observable one so we can detect
+    # when rollback is waiting for it and block it deliberately.
+    coordinator = gate._coordinator  # type: ignore[attr-defined]
+    obs_lock = ObservableLock()
+    coordinator._mutex = obs_lock  # type: ignore[assignment]
+
+    evicting_started, allow_close = _pause_victim_close(gate, "A")
+
+    t1 = asyncio.create_task(gate.execute("B", asyncio.sleep, 0))
+    await asyncio.wait_for(evicting_started.wait(), timeout=1.0)
+
+    # T1 holds reservation and is inside complete_cleanup(victim.close_and_wait()).
+    # Acquire the mutex now so the reservation-release task will block.
+    await obs_lock.acquire()
+
+    # First cancel: complete_cleanup absorbs it, keeps waiting for close_task.
+    t1.cancel()
+
+    # Unblock the victim close so T1 can progress to the rollback.
+    allow_close.set()
+
+    # Wait until the rollback's release task is blocked on the mutex.
+    await wait_for_lock_waiters(obs_lock, expected=1, timeout=2.0)
+
+    # Second cancel: must not escape complete_cleanup's shield.
+    t1.cancel()
+    await asyncio.sleep(0)
+
+    # Release the mutex. The release task must run to completion.
+    obs_lock.release()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(t1, timeout=2.0)
+
+    assert coordinator._reserved_slots == 0, (
+        "_reserved_slots leaked after double cancellation — rollback is not cancel-safe"
+    )
+
+    # Manager must still be usable after the double-cancel.
+    await gate.execute("C", asyncio.sleep, 0)
+    final = await gate.status()
+    assert final.leased_operations == 0
+    await gate.close_and_wait()
+
+
+# ---------------------------------------------------------------------------
+# Correction 5: close_and_wait() must wait for pending reservations
+# ---------------------------------------------------------------------------
+
+
+async def test_close_and_wait_waits_for_pending_reservation() -> None:
+    """close_and_wait() must not signal drain while a reservation is outstanding.
+
+    Scenario:
+      1. T1 holds a reservation (victim removed, _reserved_slots = 1).
+      2. close_and_wait() is called concurrently.
+      3. close_and_wait() must not complete before T1 releases the reservation.
+      4. Once T1 sees _closed and releases the reservation, close_and_wait() completes.
+    """
+    gate = PartitionedBulkhead(label="drain-reservation", parallelism=1, max_partitions=1)
+    await gate.execute("A", asyncio.sleep, 0)
+
+    evicting_started, allow_close = _pause_victim_close(gate, "A")
+
+    t1 = asyncio.create_task(gate.execute("B", asyncio.sleep, 0))
+    await asyncio.wait_for(evicting_started.wait(), timeout=1.0)
+
+    # T1 holds _reserved_slots = 1, is inside complete_cleanup(victim.close_and_wait()).
+    close_task = asyncio.create_task(gate.close_and_wait())
+
+    # Yield several times; close_and_wait() must NOT complete while reservation is held.
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert not close_task.done(), (
+        "close_and_wait() completed prematurely while a reservation was outstanding"
+    )
+
+    # Release the victim. T1 re-enters the loop, sees _closed, releases reservation.
+    allow_close.set()
+
+    with pytest.raises(BulkheadClosedError):
+        await asyncio.wait_for(t1, timeout=2.0)
+
+    # Now close_and_wait() must finish.
+    await asyncio.wait_for(close_task, timeout=2.0)
+
+    coordinator = gate._coordinator  # type: ignore[attr-defined]
+    assert coordinator._reserved_slots == 0
+    assert coordinator._leased_operations == 0
+
+    final = await gate.status()
+    assert final.is_closed
+    assert final.partition_count == 0
+    assert final.leased_operations == 0
+
+
+async def test_cancelling_shutdown_waiter_does_not_disrupt_close() -> None:
+    """Cancelling one wait_closed() waiter must not affect the manager or other waiters."""
+    gate = PartitionedBulkhead(label="waiter-cancel", parallelism=1, max_partitions=1)
+    release = asyncio.Event()
+
+    active = asyncio.create_task(gate.execute("alpha", release.wait))
+    await eventually(lambda: has_leased_operations(gate, 1))
+
+    await gate.close()
+
+    waiter_a = asyncio.create_task(gate.wait_closed())
+    waiter_b = asyncio.create_task(gate.wait_closed())
+    await asyncio.sleep(0)
+
+    # Cancel one of the two waiters.
+    waiter_a.cancel()
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiter_a
+
+    await asyncio.wait_for(waiter_b, timeout=2.0)
+    await asyncio.wait_for(active, timeout=2.0)
+
+    final = await gate.status()
+    assert final.is_closed
+    assert final.partition_count == 0
+    assert final.leased_operations == 0

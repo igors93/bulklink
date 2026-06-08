@@ -35,17 +35,31 @@ class PartitionedBulkheadStatus:
 
     @property
     def available_partition_slots(self) -> int:
-        """Return how many new partitions fit before reaching the hard limit."""
+        """Return how many new partitions fit before reaching the hard limit.
+
+        This count reflects only materialized partitions (``partition_count``).
+        During an LRU eviction the victim is removed from the map before its
+        replacement is created, so this value may transiently read ``1`` even
+        though one logical slot is already reserved for the pending replacement.
+        Admission logic uses the full logical count (including reservations);
+        only the snapshot does not expose the transient reserved state.
+        """
         return max(0, self.max_partitions - self.partition_count)
 
     @property
     def is_at_limit(self) -> bool:
-        """Return True when the current partition count reached the configured limit."""
+        """Return True when the materialized partition count reached the hard limit.
+
+        See ``available_partition_slots`` for the note on transient reservation state.
+        """
         return self.partition_count >= self.max_partitions
 
     @property
     def partition_utilization(self) -> float:
-        """Return current partition count divided by the configured maximum."""
+        """Return materialized partition count divided by the configured maximum.
+
+        See ``available_partition_slots`` for the note on transient reservation state.
+        """
         return self.partition_count / self.max_partitions
 
     @property

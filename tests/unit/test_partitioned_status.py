@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+from typing import Any
 
 import pytest
 
 from bulklink import PartitionedBulkhead, PartitionedBulkheadInterval
+from tests.unit.test_partitioned_bulkhead import _pause_victim_close
 
 
 async def test_status_reports_cardinality_without_exposing_keys() -> None:
@@ -100,6 +102,111 @@ def test_status_and_interval_are_immutable() -> None:
         status.partition_count = 2  # type: ignore[misc]
     with pytest.raises(dataclasses.FrozenInstanceError):
         interval.created = 1  # type: ignore[misc]
+
+
+async def test_derived_properties_reflect_materialized_partitions_only() -> None:
+    """available_partition_slots, is_at_limit, and partition_utilization reflect
+    partition_count (materialized children), not the logical count that includes
+    pending eviction reservations.  This documents the known transient behaviour.
+    """
+    gate = PartitionedBulkhead(label="obs", parallelism=1, max_partitions=1)
+    # Use keys that cannot appear as substrings in class or field names.
+    old_key = "tenant-xqz-orig"
+    new_key = "tenant-xqz-new"
+
+    await gate.execute(old_key, asyncio.sleep, 0)
+
+    evicting_started, allow_close = _pause_victim_close(gate, old_key)
+    t1 = asyncio.create_task(gate.execute(new_key, asyncio.sleep, 0))
+    await asyncio.wait_for(evicting_started.wait(), timeout=1.0)
+
+    # At this point: old_key removed from map, reservation held, new_key not yet created.
+    # The snapshot sees partition_count == 0 even though the slot is logically occupied.
+    mid_status = await gate.status()
+
+    # Documented behaviour: these properties reflect materialized children only.
+    assert mid_status.partition_count == 0
+    assert mid_status.available_partition_slots == 1  # snapshot-based, not logical
+    assert not mid_status.is_at_limit  # snapshot-based, not logical
+    assert mid_status.partition_utilization == 0.0  # snapshot-based, not logical
+
+    # Keys must never appear in the public status representation.
+    status_repr = repr(mid_status)
+    assert old_key not in status_repr
+    assert new_key not in status_repr
+
+    allow_close.set()
+    await asyncio.wait_for(t1, timeout=2.0)
+
+    # After replacement: exactly one partition, counters coherent.
+    final = await gate.status()
+    assert final.partition_count == 1
+    assert final.available_partition_slots == 0
+    assert final.is_at_limit
+    assert final.partition_utilization == 1.0
+    assert final.created_total == 2
+    assert final.evicted_total == 1
+
+    await gate.close_and_wait()
+
+
+async def test_status_counters_are_monotonically_non_decreasing() -> None:
+    """Cumulative counters must never decrease between two sequential snapshots."""
+    gate = PartitionedBulkhead(label="mono", parallelism=1, max_partitions=1)
+
+    snapshots = []
+    await gate.execute("A", asyncio.sleep, 0)
+    snapshots.append(await gate.status())
+    await gate.execute("B", asyncio.sleep, 0)
+    snapshots.append(await gate.status())
+    await gate.execute("C", asyncio.sleep, 0)
+    snapshots.append(await gate.status())
+
+    monotonic = (
+        "created_total",
+        "evicted_total",
+        "peak_partitions",
+        "peak_leased_operations",
+    )
+    for field_name in monotonic:
+        values = [getattr(s, field_name) for s in snapshots]
+        assert values == sorted(values), (
+            f"{field_name} is not monotonically non-decreasing: {values}"
+        )
+
+    await gate.close_and_wait()
+
+
+async def test_partition_limit_error_does_not_expose_keys() -> None:
+    """PartitionLimitError message must not contain the rejected partition key."""
+    from bulklink import PartitionLimitError
+
+    gate = PartitionedBulkhead(label="key-privacy", parallelism=1, max_partitions=1)
+    release = asyncio.Event()
+
+    active = asyncio.create_task(gate.execute("secret-tenant-id", release.wait))
+    await asyncio.wait_for(asyncio.create_task(_wait_leased(gate, 1)), timeout=1.0)
+
+    with pytest.raises(PartitionLimitError) as exc_info:
+        await gate.execute("another-secret", asyncio.sleep, 0)
+
+    err = exc_info.value
+    assert "secret-tenant-id" not in str(err)
+    assert "another-secret" not in str(err)
+
+    release.set()
+    await active
+    await gate.close_and_wait()
+
+
+async def _wait_leased(gate: Any, expected: int) -> None:
+    from tests.helpers import eventually
+
+    await eventually(lambda: _has_leased(gate, expected))
+
+
+async def _has_leased(gate: Any, expected: int) -> bool:
+    return (await gate.status()).leased_operations == expected
 
 
 def make_status() -> object:

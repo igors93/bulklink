@@ -102,6 +102,9 @@ Contains immutable observable values and never exposes locks, futures, or queue 
 25. A partition with admitted or waiting callers is never reclaimed.
 26. Partition keys never appear in public manager errors or status.
 27. Graceful partitioned shutdown releases the retained key mapping.
+28. Drain completion is signalled only after closing, all leases are returned,
+    and all pending eviction reservations have been released.
+29. Repeated task cancellation cannot leave a reservation permanently outstanding.
 
 ## Why gradual capacity reduction?
 

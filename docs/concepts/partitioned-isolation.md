@@ -65,7 +65,7 @@ Deadlines control admission only and never cancel work after it starts.
 ## Concurrency envelope
 
 `parallelism` and `waiting_room` are **per-partition** limits.  The global worst-case
-throughput across all retained partitions is:
+simultaneous workload across all retained partitions is:
 
 ```
 maximum concurrent operations  = parallelism  × max_partitions (conservative upper bound)
@@ -73,12 +73,28 @@ maximum queued operations       = waiting_room × max_partitions (conservative u
 ```
 
 `max_partitions` controls cardinality and the memory footprint of the partition map.
-It does not limit total throughput by itself.  When a shared downstream resource has a
-fixed capacity — for example a connection pool or an upstream rate limit — set
-`parallelism` small enough that `parallelism × max_partitions` stays within that budget.
+It does not bound the total number of simultaneous operations by itself.  When a shared
+downstream resource has a fixed concurrency limit — for example a connection pool or a
+worker pool with a fixed number of slots — set `parallelism` small enough that
+`parallelism × max_partitions` stays within that budget.
+
+Bulklink is a concurrency limiter, not a rate limiter.  It does not enforce
+requests per second; it enforces how many operations may execute or wait
+simultaneously inside each partition.
 
 `PartitionedBulkhead` is not a drop-in replacement for a single global bulkhead.
 Use it when isolation between partition keys matters more than a strict global ceiling.
+
+## Status snapshots and pending evictions
+
+`status()` reports `partition_count` as the number of materialized child bulkheads.
+During an LRU eviction the victim is removed from the map before its replacement is
+created.  In that brief window `partition_count` may transiently read lower than the
+logical count used by admission control.
+
+The derived properties `available_partition_slots`, `is_at_limit`, and
+`partition_utilization` are all computed from `partition_count`.  They reflect the
+snapshot state and do not include any pending replacement reservations.
 
 ## Manager metrics
 

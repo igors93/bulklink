@@ -35,6 +35,11 @@ more memory.
   The theoretical maximum concurrent operations across all partitions is
   `parallelism × max_partitions`; the theoretical maximum queued operations is
   `waiting_room × max_partitions`. Size both values with this envelope in mind when
-  a shared downstream resource has a fixed total capacity.
+  a shared downstream resource has a fixed concurrency limit.
 - Do not rely on `max_partitions` alone to protect a downstream resource from overload.
-  A small `parallelism` per partition is the right lever for global throughput control.
+  A small `parallelism` per partition is the right lever for global concurrency control.
+- Bulklink is a concurrency limiter, not a rate limiter. It does not enforce
+  requests per second; it bounds how many operations may run or wait simultaneously.
+- During an LRU eviction, `available_partition_slots` and `is_at_limit` in a status
+  snapshot may transiently reflect only materialized partitions (excluding a pending
+  replacement reservation). Treat these as informational, not admission guarantees.

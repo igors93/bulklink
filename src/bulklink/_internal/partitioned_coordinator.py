@@ -155,10 +155,9 @@ class PartitionCoordinator:
 
         except BaseException:
             if has_reservation:
-                # Release the reservation on cancellation, closure, or any
-                # unexpected error so the slot is not permanently occupied.
-                async with self._mutex:
-                    self._reserved_slots -= 1
+                # complete_cleanup guarantees the release runs to completion even
+                # if a second cancellation arrives while we wait for the mutex.
+                await complete_cleanup(self._release_reserved_slot())
             raise
 
     async def release_reference(self, entry: PartitionEntry) -> None:
@@ -283,8 +282,26 @@ class PartitionCoordinator:
         return event
 
     def _signal_drained_locked(self) -> None:
-        if self._closed and self._leased_operations == 0:
+        # All three conditions must hold: pending reservations indicate tasks that
+        # are mid-eviction and may still create a new partition or release a lease.
+        if self._closed and self._leased_operations == 0 and self._reserved_slots == 0:
             self._drain_signal().set()
+
+    async def _release_reserved_slot(self) -> None:
+        """Release exactly one reservation slot and re-evaluate the drain condition.
+
+        Must be called exactly once per reservation, even under cancellation.
+        Wrapping with complete_cleanup() ensures a second cancel() cannot interrupt
+        the mutex acquisition and leave _reserved_slots permanently elevated.
+        """
+        async with self._mutex:
+            if self._reserved_slots <= 0:
+                raise RuntimeError(
+                    "reserved slot released without a matching reservation: "
+                    "invariant violation in PartitionCoordinator"
+                )
+            self._reserved_slots -= 1
+            self._signal_drained_locked()
 
     def _create_locked(self, key: Hashable, *, now: float) -> PartitionEntry:
         entry = PartitionEntry(
