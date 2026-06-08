@@ -53,6 +53,10 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
 addopts = ["--import-mode=importlib"]
+markers = [
+  "stress: deterministic adversarial concurrency tests",
+  "model: generated model-oriented state transition tests",
+]
 
 [tool.ruff]
 line-length = 100

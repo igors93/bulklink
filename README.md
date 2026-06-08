@@ -192,3 +192,22 @@ python -m pip install -e ".[dev]"
 ## License
 
 MIT.
+
+## Validation and benchmarks
+
+The release candidate is checked on Python 3.10 through 3.14 on Linux, with additional
+Windows and macOS validation. The suite includes deterministic race tests, generated
+model-oriented sequences, adversarial stress, executable examples, clean-wheel
+installation, and consumer-facing typing checks.
+
+Run the complete local verification on Linux or macOS:
+
+```bash
+./scripts/ci.sh
+```
+
+Record a local performance baseline without enforcing unstable timing thresholds:
+
+```bash
+python -m benchmarks.run --output benchmark-results.json
+```

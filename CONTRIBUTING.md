@@ -25,3 +25,19 @@ Run all checks with:
 ```bash
 ./scripts/ci.sh
 ```
+
+On Windows PowerShell, run the equivalent commands directly:
+
+```powershell
+python -m ruff format --check .
+python -m ruff check .
+python -m mypy src
+python -m pytest --cov=bulklink --cov-report=term-missing
+python -m benchmarks.run --iterations 200 --rounds 1 --waiters 100
+python -m build
+python scripts\verify_release.py
+```
+
+Model-oriented and stress tests must be deterministic, bounded by explicit timeouts,
+and leave no pending work, queued entries, or allocated slots. Benchmarks record a
+baseline and must not use noisy timing thresholds as release gates.

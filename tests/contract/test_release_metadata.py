@@ -43,15 +43,18 @@ def test_distribution_metadata_declares_supported_contract() -> None:
     assert (ROOT / "src/bulklink/py.typed").is_file()
 
 
-def test_ci_covers_every_supported_python_version_and_distribution_verification() -> None:
+def test_ci_covers_supported_versions_platforms_and_release_verification() -> None:
     text = CI_WORKFLOW.read_text(encoding="utf-8")
 
     for version in ("3.10", "3.11", "3.12", "3.13", "3.14"):
         assert f'"{version}"' in text
 
+    assert "windows-latest" in text
+    assert "macos-latest" in text
+    assert "python -m benchmarks.run" in text
     assert "python scripts/verify_release.py" in text
     assert "actions/upload-artifact@v4" in text
-    assert "needs:" in text
+    assert "platforms" in text
     assert "compatibility" in text
 
 

@@ -21,6 +21,9 @@ No changes yet.
 - Release verification for wheel contents, clean installation, runtime behavior, and
   consumer-facing typing.
 - CI coverage for Python 3.10 through 3.14.
+- Deterministic model-oriented admission, resize, cancellation, and shutdown tests.
+- Cross-platform validation on Windows and macOS.
+- Executable examples and dependency-free performance and waiter-memory benchmarks.
 
 ### Changed
 

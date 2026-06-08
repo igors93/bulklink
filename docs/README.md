@@ -27,3 +27,4 @@
 
 - [Architecture](maintainers/architecture.md)
 - [Release checklist](maintainers/releasing.md)
+- [Benchmarks](maintainers/benchmarks.md)
