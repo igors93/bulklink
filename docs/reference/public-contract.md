@@ -89,3 +89,13 @@ interval, and event records contain only capacity and timing metadata.
 are hashable application values but are never present in public status, errors, or child
 labels. `max_partitions` is a hard limit. Only idle partitions may be reclaimed, using LRU
 selection under pressure or explicit idle cleanup. No permanent cleanup task is created.
+
+Admission deadlines bound the caller's total wait across both manager resolution (including
+any eviction victim close) and child admission. When a deadline expires during victim close,
+the caller receives `BulkheadQueueTimeoutError` immediately; the victim close continues in
+the background and is awaited by `close_and_wait()`. Protected user code is never started
+after the deadline.
+
+`discard()` and `cleanup_idle()` raise `BulkheadClosedError` once `close()` has been
+initiated. `close()` is idempotent. Multiple `wait_closed()` callers are independent;
+cancelling one does not affect the lifecycle or other waiters.

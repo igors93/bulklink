@@ -160,3 +160,44 @@ A manager reference is acquired before child admission and released only after t
 child slot lifecycle. This prevents eviction while an operation is waiting or executing.
 Under cardinality pressure, only the least-recently-used entry with zero references may be
 removed. Normal TTL cleanup is explicit and runs no permanent task.
+
+### PartitionCoordinator lifecycle
+
+The manager moves through three states: `OPEN` → `CLOSING` → `CLOSED`.
+
+- `OPEN`: admissions, maintenance, and new partitions are all permitted.
+- `CLOSING`: `close()` has been called. New admissions and new maintenance registrations
+  raise `BulkheadClosedError`. Pending evictions and child closures continue under the
+  existing pending-op registrations.
+- `CLOSED`: all pending ops are gone, the drain event is set, and the key map is cleared.
+
+The transition from `OPEN` to `CLOSING` is idempotent. Repeated `close()` calls are safe.
+
+### Pending operation ownership
+
+All background work (eviction, `cleanup_idle()`, `discard()`, shutdown-child close)
+is tracked in a single `_pending_ops: dict[int, _PendingOp]` dictionary. Each entry
+has explicit ownership, a kind flag (`EVICTION` or `MAINTENANCE`), and a capacity-ownership
+flag. Derived counters (`_reserved_slots`, `_pending_child_closures`) are computed from this
+dict for backward compatibility but are not separate authoritative counters.
+
+Every pending op:
+- is registered under the manager lock before the lock is released;
+- is released exactly once, either inline (if the caller completes) or via a done callback
+  (if the caller times out and the close task is transferred to manager ownership);
+- participates in drain accounting: the drain event is only set when `_pending_ops` is empty.
+
+### Deadline-bounded eviction
+
+When a caller has an admission deadline and a victim must be closed, the victim close is
+started as an `asyncio.Task`. The caller waits with `asyncio.wait_for(asyncio.shield(task))`.
+If the deadline fires before the close task completes:
+
+1. A done callback is attached to the close task that will release the pending op when
+   the task eventually finishes.
+2. The caller immediately receives `BulkheadQueueTimeoutError`.
+3. The close task continues under manager ownership.
+4. When it finishes, the callback releases the pending op and re-evaluates the drain signal.
+
+The caller's protected user code is never started after the deadline. The caller's task never
+waits longer than the deadline for manager-level work.

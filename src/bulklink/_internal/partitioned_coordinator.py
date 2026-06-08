@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Hashable
+from dataclasses import dataclass, field
+from enum import Enum, auto
 from secrets import token_hex
 
 from bulklink._internal.cancellation import complete_cleanup
@@ -18,6 +20,32 @@ from bulklink._internal.validation import (
 from bulklink.bulkhead import AsyncBulkhead
 from bulklink.errors import BulkheadClosedError, BulkheadQueueTimeoutError, PartitionLimitError
 from bulklink.partitioned_status import PartitionedBulkheadStatus
+
+
+class _PartitionLifecycle(Enum):
+    """Explicit lifecycle states for the partitioned bulkhead manager."""
+
+    OPEN = auto()
+    # New admissions and maintenance are rejected; pending ops continue.
+    CLOSING = auto()
+    # All work done, map cleared, drain signaled.
+    CLOSED = auto()
+
+
+class _PendingOpKind(Enum):
+    EVICTION = auto()  # holds a capacity reservation
+    MAINTENANCE = auto()  # cleanup_idle / discard / shutdown-child close
+
+
+@dataclass(slots=True)
+class _PendingOp:
+    """Tracks one pending background operation with explicit ownership."""
+
+    kind: _PendingOpKind
+    # True when this op holds one logical capacity slot (eviction).
+    owns_capacity: bool
+    # The asyncio.Task driving this op's close work, if already spawned.
+    task: asyncio.Task[None] | None = field(default=None)
 
 
 class PartitionCoordinator:
@@ -45,20 +73,34 @@ class PartitionCoordinator:
         self._mutex = asyncio.Lock()
         self._partitions: dict[Hashable, PartitionEntry] = {}
         self._leased_operations = 0
-        # Counts logical slots held by tasks that evicted a victim and are
-        # closing it before creating the replacement.  Included in capacity
-        # accounting so no other task can claim the slot being reclaimed.
-        self._reserved_slots = 0
-        # Counts children that have been removed from _partitions but whose
-        # close_and_wait() has not yet finished.  cleanup_idle() and discard()
-        # increment this under the lock before releasing it, and each close
-        # decrements it in a finally block so the drain signal is not raised
-        # while child teardown is still in flight.
-        self._pending_child_closures = 0
-        self._closed = False
+
+        # Single source of truth for all pending background operations.
+        # Key: id(op) — unique per _PendingOp instance.
+        self._pending_ops: dict[int, _PendingOp] = {}
+
+        self._lifecycle = _PartitionLifecycle.OPEN
         self._owner_loop: asyncio.AbstractEventLoop | None = None
         self._drained_event: asyncio.Event | None = None
         self._counters = PartitionRuntimeCounters()
+
+    # ------------------------------------------------------------------
+    # Derived backwards-compatibility properties used by existing tests.
+    # ------------------------------------------------------------------
+
+    @property
+    def _closed(self) -> bool:
+        """Backward-compatibility shim: True when lifecycle is CLOSING or CLOSED."""
+        return self._lifecycle is not _PartitionLifecycle.OPEN
+
+    @property
+    def _reserved_slots(self) -> int:
+        """Backward-compatibility shim: count of ops that own a capacity slot."""
+        return sum(op.owns_capacity for op in self._pending_ops.values())
+
+    @property
+    def _pending_child_closures(self) -> int:
+        """Backward-compatibility shim: count of all pending background ops."""
+        return len(self._pending_ops)
 
     @property
     def label(self) -> str:
@@ -117,8 +159,9 @@ class PartitionCoordinator:
         Args:
             key: Partition key to acquire.
             deadline: Absolute event-loop time after which the attempt is abandoned.
-                Checked before each blocking operation; not enforced mid-close because
-                complete_cleanup() must run to maintain invariants.
+                Checked before each blocking operation. When a victim close is needed
+                and a deadline exists, the caller is shielded behind the deadline so
+                the caller cannot wait longer than their budget.
             immediate: When True (slot_now semantics), reject instead of waiting for
                 victim closure.  The mutex itself is still acquired briefly.
             budget_for_error: Original wait budget in seconds, used in the
@@ -126,16 +169,15 @@ class PartitionCoordinator:
         """
         normalized = self.validated_key(key)
         loop = self._bind_to_running_loop()
-        # True once this task has removed a victim and incremented _reserved_slots.
-        # The reservation is the logical slot for the replacement; it prevents any
-        # other task from claiming the capacity we freed while we close the victim.
-        has_reservation = False
+
+        # Pending op registered for this task's eviction reservation, if any.
+        op: _PendingOp | None = None
 
         try:
             while True:
                 victim: PartitionEntry | None = None
                 async with self._mutex:
-                    if self._closed:
+                    if self._lifecycle is not _PartitionLifecycle.OPEN:
                         raise BulkheadClosedError(label=self._label)
 
                     # Check the admission deadline before doing any work.
@@ -147,19 +189,20 @@ class PartitionCoordinator:
 
                     entry = self._partitions.get(normalized)
                     if entry is not None:
-                        if has_reservation:
-                            self._reserved_slots -= 1
-                            has_reservation = False
+                        if op is not None:
+                            # Our reservation is consumed — convert it to final state.
+                            self._release_pending_op_locked(op)
+                            op = None
                         self._borrow_locked(entry)
                         return entry
 
-                    # has_reservation means _reserved_slots already accounts for this
-                    # task's slot; do not compete for capacity a second time.
+                    # op.owns_capacity means _reserved_slots already accounts for
+                    # this task's slot; do not compete for capacity a second time.
                     logical = len(self._partitions) + self._reserved_slots
-                    if has_reservation or logical < self._max_partitions:
-                        if has_reservation:
-                            self._reserved_slots -= 1
-                            has_reservation = False
+                    if op is not None or logical < self._max_partitions:
+                        if op is not None:
+                            self._release_pending_op_locked(op)
+                            op = None
                         entry = self._create_locked(normalized, now=loop.time())
                         self._borrow_locked(entry)
                         return entry
@@ -175,7 +218,6 @@ class PartitionCoordinator:
 
                     if immediate:
                         # slot_now() semantics: cannot wait for victim closure.
-                        # Reject at the limit so callers get the standard error.
                         self._counters.limit_rejected_total += 1
                         raise PartitionLimitError(
                             label=self._label,
@@ -183,29 +225,98 @@ class PartitionCoordinator:
                             active_partitions=self._active_partitions_locked(),
                         )
 
-                    # Reserve the freed slot before releasing the lock.  Any task
-                    # that checks capacity while we close the victim will see logical
-                    # at max_partitions and cannot steal the slot we are reclaiming.
+                    # Register the reservation before releasing the lock.
                     del self._partitions[victim.key]
                     self._counters.evicted_total += 1
-                    self._reserved_slots += 1
-                    has_reservation = True
+                    op = _PendingOp(kind=_PendingOpKind.EVICTION, owns_capacity=True)
+                    self._pending_ops[id(op)] = op
 
-                await complete_cleanup(victim.bulkhead.close_and_wait())
-                # After victim close, re-check deadline before creating the replacement.
-                if deadline is not None and loop.time() >= deadline:
-                    raise BulkheadQueueTimeoutError(
-                        label=self._label,
-                        wait_limit=budget_for_error if budget_for_error is not None else 0.0,
-                    )
+                # Victim close outside the lock.  When a deadline is present we
+                # shield the caller: spawn a task and wait with a timeout.  If the
+                # deadline fires, the task continues under manager ownership and the
+                # caller receives BulkheadQueueTimeoutError.
+                if deadline is not None:
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
+                        # Already expired — attach a callback so the op is released
+                        # when the underlying task finishes, then raise immediately.
+                        # We must not hold op here, so we transfer ownership first.
+                        close_task_now: asyncio.Task[None] = asyncio.create_task(
+                            victim.bulkhead.close_and_wait()
+                        )
+                        async with self._mutex:
+                            op.task = close_task_now
+                        self._attach_release_callback(op, close_task_now)
+                        op = None
+                        raise BulkheadQueueTimeoutError(
+                            label=self._label,
+                            wait_limit=budget_for_error if budget_for_error is not None else 0.0,
+                        )
+                    # Start the close task and wait with deadline timeout.
+                    close_task = asyncio.create_task(victim.bulkhead.close_and_wait())
+                    async with self._mutex:
+                        op.task = close_task
+                    timed_out = False
+                    cancelled_error: asyncio.CancelledError | None = None
+                    try:
+                        await asyncio.wait_for(asyncio.shield(close_task), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        timed_out = True
+                    except asyncio.CancelledError as err:
+                        cancelled_error = err
+
+                    if timed_out or cancelled_error is not None:
+                        # Transfer task ownership — caller is released, task continues.
+                        # Use complete_cleanup so a second cancel cannot interrupt this.
+                        await complete_cleanup(
+                            self._transfer_victim_close_to_manager(op, close_task)
+                        )
+                        op = None
+                        if cancelled_error is not None:
+                            raise cancelled_error
+                        raise BulkheadQueueTimeoutError(
+                            label=self._label,
+                            wait_limit=budget_for_error if budget_for_error is not None else 0.0,
+                        )
+                    # Close completed within deadline — clear task reference.
+                    async with self._mutex:
+                        op.task = None
+                else:
+                    await complete_cleanup(victim.bulkhead.close_and_wait())
+
                 # Loop continues: next iteration creates the replacement entry.
 
         except BaseException:
-            if has_reservation:
-                # complete_cleanup guarantees the release runs to completion even
-                # if a second cancellation arrives while we wait for the mutex.
-                await complete_cleanup(self._release_reserved_slot())
+            if op is not None:
+                # Release the reservation so drain/capacity accounting stays correct.
+                await complete_cleanup(self._release_reserved_op(op))
             raise
+
+    async def _transfer_victim_close_to_manager(
+        self,
+        op: _PendingOp,
+        close_task: asyncio.Task[None],
+    ) -> None:
+        """Hand off an already-started victim close task to manager ownership.
+
+        The close task continues running.  When it finishes, the pending op is
+        released so the drain signal can fire.  The caller must set op=None after
+        this returns.
+        """
+        self._attach_release_callback(op, close_task)
+
+    def _attach_release_callback(
+        self,
+        op: _PendingOp,
+        task: asyncio.Task[None],
+    ) -> None:
+        """Attach a done callback that releases the pending op when the task ends."""
+        captured_op = op
+
+        def _on_close_done(t: asyncio.Task[None]) -> None:
+            asyncio.ensure_future(complete_cleanup(self._release_reserved_op(captured_op)))
+
+        task.add_done_callback(_on_close_done)
 
     async def release_reference(self, entry: PartitionEntry) -> None:
         """Return one caller reference after child admission has fully ended."""
@@ -227,7 +338,12 @@ class PartitionCoordinator:
         loop = self._bind_to_running_loop()
         now = loop.time()
 
+        ops: list[tuple[_PendingOp, PartitionEntry]] = []
+
         async with self._mutex:
+            if self._lifecycle is not _PartitionLifecycle.OPEN:
+                raise BulkheadClosedError(label=self._label)
+
             victims = tuple(
                 entry
                 for entry in self._partitions.values()
@@ -235,35 +351,47 @@ class PartitionCoordinator:
             )
             for entry in victims:
                 del self._partitions[entry.key]
+                mop = _PendingOp(kind=_PendingOpKind.MAINTENANCE, owns_capacity=False)
+                self._pending_ops[id(mop)] = mop
+                ops.append((mop, entry))
             self._counters.evicted_total += len(victims)
-            # Register maintenance before releasing the lock so the drain condition
-            # cannot fire while these children are still being torn down.
-            self._pending_child_closures += len(victims)
 
-        if not victims:
+        if not ops:
             return 0
 
-        # Close each victim independently so each one releases its own maintenance
-        # slot.  return_exceptions prevents one failure from orphaning remaining
-        # tasks (and their maintenance releases).
-        await complete_cleanup(_close_with_tracking(self, victims))
-        return len(victims)
+        # Close each victim independently so each one releases its own op slot.
+        results: list[BaseException | None] = list(
+            await asyncio.gather(
+                *(self._close_child_and_release_op(mop, entry.bulkhead) for mop, entry in ops),
+                return_exceptions=True,
+            )
+        )
+        errors = [r for r in results if isinstance(r, BaseException)]
+        if errors:
+            raise errors[0]
+        return len(ops)
 
     async def discard(self, key: Hashable) -> bool:
         """Remove one partition only when it is absent or currently idle."""
         normalized = self.validated_key(key)
         self._bind_to_running_loop()
 
+        mop: _PendingOp | None = None
+        entry: PartitionEntry | None = None
+
         async with self._mutex:
+            if self._lifecycle is not _PartitionLifecycle.OPEN:
+                raise BulkheadClosedError(label=self._label)
+
             entry = self._partitions.get(normalized)
             if entry is None or entry.borrowers != 0:
                 return False
             del self._partitions[normalized]
             self._counters.discarded_total += 1
-            # Register maintenance before releasing the lock.
-            self._pending_child_closures += 1
+            mop = _PendingOp(kind=_PendingOpKind.MAINTENANCE, owns_capacity=False)
+            self._pending_ops[id(mop)] = mop
 
-        await complete_cleanup(self._close_child_and_release_maintenance(entry.bulkhead))
+        await complete_cleanup(self._close_child_and_release_op(mop, entry.bulkhead))
         return True
 
     async def status(self) -> PartitionedBulkheadStatus:
@@ -275,6 +403,7 @@ class PartitionCoordinator:
             partition_count = len(self._partitions)
             active_partitions = self._active_partitions_locked()
             counters = self._counters
+            is_closed = self._lifecycle is not _PartitionLifecycle.OPEN
             return PartitionedBulkheadStatus(
                 instance_id=self._instance_id,
                 snapshot_index=self._snapshot_index,
@@ -293,7 +422,7 @@ class PartitionCoordinator:
                 limit_rejected_total=counters.limit_rejected_total,
                 peak_partitions=counters.peak_partitions,
                 peak_leased_operations=counters.peak_leased_operations,
-                is_closed=self._closed,
+                is_closed=is_closed,
             )
 
     async def close(self) -> None:
@@ -304,7 +433,7 @@ class PartitionCoordinator:
         """Wait for all children and release retained partition keys after shutdown."""
         self._bind_to_running_loop()
         async with self._mutex:
-            if not self._closed:
+            if self._lifecycle is _PartitionLifecycle.OPEN:
                 raise RuntimeError("close() must be called before wait_closed()")
             entries = tuple(self._partitions.values())
             drained = self._drain_signal()
@@ -324,7 +453,10 @@ class PartitionCoordinator:
     async def _close(self) -> None:
         self._bind_to_running_loop()
         async with self._mutex:
-            self._closed = True
+            if self._lifecycle is not _PartitionLifecycle.OPEN:
+                # Idempotent — already closing or closed.
+                return
+            self._lifecycle = _PartitionLifecycle.CLOSING
             entries = tuple(self._partitions.values())
             self._signal_drained_locked()
         await _close_entries_without_wait(entries)
@@ -341,53 +473,56 @@ class PartitionCoordinator:
 
     def _signal_drained_locked(self) -> None:
         # All four conditions must hold before the manager is considered drained:
-        # - closed: no new work is accepted
+        # - not OPEN: no new work accepted
         # - leased_operations == 0: no outstanding admission slots
-        # - reserved_slots == 0: no pending eviction replacements
-        # - pending_child_closures == 0: no children still being torn down by
-        #   cleanup_idle() or discard()
+        # - no pending ops with capacity: no pending eviction replacements
+        # - no pending ops at all: no children still being torn down
         if (
-            self._closed
+            self._lifecycle is not _PartitionLifecycle.OPEN
             and self._leased_operations == 0
-            and self._reserved_slots == 0
-            and self._pending_child_closures == 0
+            and not self._pending_ops
         ):
             self._drain_signal().set()
 
-    async def _release_reserved_slot(self) -> None:
-        """Release exactly one reservation slot and re-evaluate the drain condition.
-
-        Must be called exactly once per reservation, even under cancellation.
-        Wrapping with complete_cleanup() ensures a second cancel() cannot interrupt
-        the mutex acquisition and leave _reserved_slots permanently elevated.
-        """
+    async def _release_reserved_op(self, op: _PendingOp) -> None:
+        """Release exactly one pending op and re-evaluate the drain condition."""
         async with self._mutex:
-            if self._reserved_slots <= 0:
+            if id(op) not in self._pending_ops:
                 raise RuntimeError(
-                    "reserved slot released without a matching reservation: "
+                    "pending op released without a matching registration: "
                     "invariant violation in PartitionCoordinator"
                 )
-            self._reserved_slots -= 1
+            del self._pending_ops[id(op)]
             self._signal_drained_locked()
 
-    async def _close_child_and_release_maintenance(self, bulkhead: AsyncBulkhead) -> None:
-        """Close one removed child and release its maintenance slot when done.
+    def _release_pending_op_locked(self, op: _PendingOp) -> None:
+        """Release a pending op while already holding the lock (inline path).
 
-        The slot is registered under the mutex before the child is removed, so the
-        drain signal cannot fire while the child is still tearing down.  The finally
-        block ensures the counter is always decremented, even when the close raises
-        or the task is cancelled via complete_cleanup().
+        The drain signal is NOT checked here because the caller is still inside
+        the lock; the caller is responsible for calling _signal_drained_locked()
+        if appropriate, or the natural flow re-evaluates it on the next operation.
+        This is only called when the reservation is consumed by creating a partition
+        (not a terminal error path), so drain is not relevant there.
         """
+        if id(op) not in self._pending_ops:
+            raise RuntimeError(
+                "pending op released without a matching registration (locked path): "
+                "invariant violation in PartitionCoordinator"
+            )
+        del self._pending_ops[id(op)]
+
+    async def _close_child_and_release_op(self, op: _PendingOp, bulkhead: AsyncBulkhead) -> None:
+        """Close one removed child and release its maintenance op when done."""
         try:
             await bulkhead.close_and_wait()
         finally:
             async with self._mutex:
-                if self._pending_child_closures <= 0:
+                if id(op) not in self._pending_ops:
                     raise RuntimeError(
-                        "maintenance slot released without a matching registration: "
+                        "maintenance op released without a matching registration: "
                         "invariant violation in PartitionCoordinator"
                     )
-                self._pending_child_closures -= 1
+                del self._pending_ops[id(op)]
                 self._signal_drained_locked()
 
     def _create_locked(self, key: Hashable, *, now: float) -> PartitionEntry:
@@ -426,11 +561,6 @@ class PartitionCoordinator:
         return sum(entry.borrowers > 0 for entry in self._partitions.values())
 
 
-async def _close_entries(entries: tuple[PartitionEntry, ...]) -> None:
-    if entries:
-        await asyncio.gather(*(entry.bulkhead.close_and_wait() for entry in entries))
-
-
 async def _close_entries_without_wait(entries: tuple[PartitionEntry, ...]) -> None:
     if entries:
         await asyncio.gather(*(entry.bulkhead.close() for entry in entries))
@@ -439,24 +569,3 @@ async def _close_entries_without_wait(entries: tuple[PartitionEntry, ...]) -> No
 async def _wait_entries(entries: tuple[PartitionEntry, ...]) -> None:
     if entries:
         await asyncio.gather(*(entry.bulkhead.wait_closed() for entry in entries))
-
-
-async def _close_with_tracking(
-    coordinator: PartitionCoordinator,
-    victims: tuple[PartitionEntry, ...],
-) -> None:
-    """Close each victim independently and release its maintenance slot when done.
-
-    Uses return_exceptions so a failure in one close operation does not abandon the
-    remaining tasks and their maintenance releases.  The first error is re-raised
-    after all closures have settled.
-    """
-    results: list[BaseException | None] = list(
-        await asyncio.gather(
-            *(coordinator._close_child_and_release_maintenance(e.bulkhead) for e in victims),
-            return_exceptions=True,
-        )
-    )
-    errors = [r for r in results if isinstance(r, BaseException)]
-    if errors:
-        raise errors[0]

@@ -65,6 +65,38 @@ The selected child uses the normal `AsyncBulkhead` guarantees:
 
 Deadlines control admission only and never cancel work after it starts.
 
+## Admission budget and eviction
+
+The admission deadline (`slot_before`, `execute_before`, `wait_limit`, `slot_within`)
+covers the full admission path: both the time spent waiting for manager-level eviction
+and the time spent waiting for the child bulkhead to grant a slot.
+
+When a victim partition must be closed to make room:
+
+- The victim close is started as a background task.
+- The caller waits for it under the deadline.
+- If the deadline expires before the close finishes, the caller receives
+  `BulkheadQueueTimeoutError` immediately — the close task continues in the background
+  under manager ownership.
+- When the background task finishes, the reserved capacity slot is released and the drain
+  signal is re-evaluated.
+- Protected user code is never started after the deadline expires.
+
+`execute_now()` and `slot_now()` never cause eviction. They raise `PartitionLimitError`
+immediately if no partition is available without waiting.
+
+## Maintenance and shutdown
+
+`cleanup_idle()` and `discard()` raise `BulkheadClosedError` once `close()` has been
+called. This prevents new maintenance from being registered after the manager begins its
+shutdown sequence.
+
+`close()` is idempotent. Multiple calls do not duplicate child close operations.
+
+`close_and_wait()` waits for all in-flight evictions, cleanup closures, and discard
+closures to finish before declaring the manager fully drained. The drain signal is set only
+when all pending operations are complete.
+
 ## Concurrency envelope
 
 `parallelism` and `waiting_room` are **per-partition** limits.  The global worst-case

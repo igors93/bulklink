@@ -55,4 +55,11 @@ release-process changes needed to validate the intended contract.
 - partition cardinality is bounded by `max_partitions`;
 - active partitions are never evicted;
 - partition keys do not appear in public errors or manager metrics;
-- partition cleanup uses no permanent background task.
+- partition cleanup uses no permanent background task;
+- `discard()` and `cleanup_idle()` raise `BulkheadClosedError` after `close()` is initiated;
+- admission deadlines bound the caller's total wait including manager eviction time;
+- a timed-out caller during eviction receives the error immediately; cleanup continues in
+  the background under manager ownership and is awaited by `close_and_wait()`;
+- `close()` is idempotent; multiple calls do not duplicate child operations;
+- multiple concurrent `wait_closed()` callers complete independently; cancelling one does
+  not alter the lifecycle or affect other waiters.

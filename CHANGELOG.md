@@ -23,12 +23,32 @@ All notable changes to Bulklink will be documented in this file.
   `PartitionLimitError` immediately without modifying the partition map.
 - Admission deadlines (`slot_within`, `slot_before`, configured `wait_limit`) now
   cover the full admission path — manager resolution and eviction time are deducted
-  from the caller's budget before the child bulkhead sees the remaining limit.  An
-  expired deadline detected after victim closure raises `BulkheadQueueTimeoutError`
-  and releases the reservation without leaking state.
+  from the caller's budget before the child bulkhead sees the remaining limit.  When a
+  deadline expires during victim closure, the caller receives `BulkheadQueueTimeoutError`
+  immediately; the victim close continues in the background under manager ownership and
+  is awaited by the drain signal.
 - `PartitionLimitError` message no longer attributes the rejection solely to active
   partitions; the wording is neutral so that rejections caused by pending eviction
   reservations are not described as "0 active partitions."
+- `discard()` and `cleanup_idle()` now raise `BulkheadClosedError` when called after
+  `close()` has been initiated, preventing maintenance operations from being registered
+  after the manager has entered the CLOSING lifecycle state.
+- Multiple concurrent `close()` calls are now idempotent; the manager enters CLOSING
+  only once and subsequent calls return without duplicating child close operations.
+
+### Changed
+
+- `PartitionCoordinator` now tracks all pending operations (evictions, idle cleanup,
+  discard, and shutdown-child closes) in a single `_pending_ops` dictionary, replacing
+  the previous pair of anonymous counters (`_reserved_slots`, `_pending_child_closures`).
+  Every pending op has exactly one owner, is released exactly once, and participates in
+  drain accounting.
+- The manager lifecycle is now modeled as an explicit three-state enum (`OPEN`,
+  `CLOSING`, `CLOSED`) rather than a boolean flag, making impossible states
+  unrepresentable and preventing late maintenance registration during shutdown.
+- Victim close during eviction is now bounded by the caller's admission deadline.
+  The caller receives `BulkheadQueueTimeoutError` at the deadline; the victim close
+  task continues under manager ownership so capacity is correctly restored.
 
 ### Security
 

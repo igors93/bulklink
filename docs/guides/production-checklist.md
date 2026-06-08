@@ -30,6 +30,7 @@ more memory.
 - Use immutable, stable, hashable partition keys.
 - Keep keys free of secrets when possible even though Bulklink does not render them.
 - Call `cleanup_idle()` from an application-owned maintenance loop when normal TTL cleanup is desired.
+- Do not call `cleanup_idle()` or `discard()` after `close()` — they raise `BulkheadClosedError`.
 - Treat `PartitionLimitError` as local admission pressure, not as a remote network failure.
 - Understand that `parallelism` and `waiting_room` are **per-partition** limits, not global ones.
   The theoretical maximum concurrent operations across all partitions is
@@ -40,6 +41,11 @@ more memory.
   A small `parallelism` per partition is the right lever for global concurrency control.
 - Bulklink is a concurrency limiter, not a rate limiter. It does not enforce
   requests per second; it bounds how many operations may run or wait simultaneously.
+- Admission deadlines cover the full path including manager eviction time. A timeout during
+  eviction returns the error immediately to the caller; the eviction continues in the
+  background. Do not assume cleanup is complete when the error arrives.
+- `execute_now()` and `slot_now()` never trigger eviction. Use them only when immediate
+  rejection at the partition limit is the desired behavior.
 - During an LRU eviction, `available_partition_slots` and `is_at_limit` in a status
   snapshot may transiently reflect only materialized partitions (excluding a pending
   replacement reservation). Treat these as informational, not admission guarantees.
