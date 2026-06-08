@@ -25,4 +25,4 @@ def test_root_public_api_is_exact_and_small() -> None:
 
 
 def test_version_is_exposed() -> None:
-    assert bulklink.__version__ == "0.2.0rc1"
+    assert bulklink.__version__ == "0.2.0"

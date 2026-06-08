@@ -3,31 +3,30 @@
 Bulklink releases are built from immutable Git tags and published through PyPI Trusted
 Publishing. The repository does not store PyPI passwords or long-lived API tokens.
 
-## Prepare a release candidate
+## Promote `0.2.0rc1` to `0.2.0`
 
-1. Confirm the working tree contains only intended release changes.
-2. Choose the next PEP 440 version. The current candidate is `0.2.0rc1`.
-3. Update the version in both `pyproject.toml` and `bulklink.__version__`.
-4. Move completed notes from `Unreleased` into a dated changelog section matching the
-   exact version.
-5. Run `./scripts/ci.sh` from a clean development environment.
-6. Commit the candidate changes and wait for every job in the main CI workflow to pass.
-7. Confirm the public exports in `bulklink.__all__` are intentional.
-8. Create an annotated tag whose name is exactly `v` followed by the package version.
-9. Push only that tag after the candidate commit is already present on `main`.
-10. Review and approve the protected `pypi` environment when the release workflow asks.
-11. Confirm that PyPI contains the same wheel and source archive produced by the workflow.
-
-For this candidate:
+1. Confirm the release-candidate commit passed Linux, Windows, and macOS CI.
+2. Install `0.2.0rc1` from PyPI in a clean environment and run a representative app.
+3. Confirm no unresolved correctness, cancellation, shutdown, typing, or packaging defect.
+4. Update the project and runtime versions to `0.2.0`.
+5. Add a dated `0.2.0` changelog section while retaining the `0.2.0rc1` history.
+6. Review `bulklink.__all__`, public enum values, dataclass fields, exception inheritance,
+   and primary method calling conventions.
+7. Run `./scripts/ci.sh` from a clean development environment.
+8. Commit the promotion and wait for every main CI job to pass.
+9. Create and push the annotated `v0.2.0` tag.
+10. Review and approve the protected `pypi` environment.
+11. Confirm PyPI contains the same verified wheel and source archive from the workflow.
 
 ```bash
-git tag -a v0.2.0rc1 -m "Bulklink 0.2.0rc1"
-git push origin v0.2.0rc1
+git tag -a v0.2.0 -m "Bulklink 0.2.0"
+git push origin v0.2.0
 ```
 
-## Required repository configuration
+Never rename, replace, or reuse the `v0.2.0rc1` tag or its artifacts. A final release is
+a new version and a new immutable build.
 
-Before the first publication:
+## Required repository configuration
 
 - configure a PyPI Trusted Publisher for repository `igors93/bulklink`;
 - set the workflow name to `release.yml`;
@@ -38,14 +37,15 @@ Before the first publication:
 The release workflow grants `id-token: write` only to the publishing job. Build and test
 jobs retain read-only repository permissions.
 
-## Version consistency
+## Version and contract consistency
 
-The project version is intentionally present in both `pyproject.toml` and
-`bulklink.__version__`. Contract tests and the release verifier fail when the values do
-not match.
+The version is present in both `pyproject.toml` and `bulklink.__version__`. Contract tests
+and release verification fail when they differ or the changelog lacks a dated matching
+section. If `BULKLINK_RELEASE_TAG` is present, it must equal `v{version}` exactly.
 
-The release verifier also checks that an optional `BULKLINK_RELEASE_TAG` value exactly
-matches `v{version}` and that the changelog contains a dated section for the version.
+For the stable `0.2.x` line, the release also verifies the documented public exports,
+enum values, immutable record fields, exception hierarchy, and primary calling
+conventions. Intentional changes belong in a future minor release with changelog notes.
 
 ## Distribution verification
 
@@ -56,13 +56,14 @@ The release verifier checks:
 - inclusion of the PEP 561 `py.typed` marker;
 - installation of the wheel into a temporary virtual environment;
 - runtime use of execution, resizing, diagnostics, events, shutdown, and the registry;
+- the stable public contract from the installed wheel;
 - strict type checking of a consumer against the installed wheel rather than `src/`.
 
-The release workflow publishes the already verified files from `dist/`. It must never
-rebuild artifacts in the publishing job.
+The publishing job downloads and publishes the already verified files. It must never
+rebuild artifacts.
 
-## Promote a candidate to a final release
+## Future releases
 
-A final release is a new version, not a renamed candidate artifact. Update the project
-to `0.2.0`, create a matching changelog section, rerun all checks, and publish a new
-`v0.2.0` tag. Do not reuse or replace `v0.2.0rc1`.
+Patch releases preserve the documented `0.2.x` contract. A future pre-1.0 minor release
+may intentionally change or extend it, but must update contract tests, documentation, and
+the changelog together.

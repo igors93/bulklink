@@ -10,6 +10,7 @@ PYPROJECT = ROOT / "pyproject.toml"
 CHANGELOG = ROOT / "CHANGELOG.md"
 CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
+PUBLIC_CONTRACT = ROOT / "docs/reference/public-contract.md"
 
 
 def _project_version() -> str:
@@ -21,6 +22,14 @@ def _project_version() -> str:
 
 def test_project_and_runtime_versions_match() -> None:
     assert _project_version() == bulklink.__version__
+
+
+def test_stable_release_version_and_contract_document_are_present() -> None:
+    assert _project_version() == "0.2.0"
+    assert PUBLIC_CONTRACT.is_file()
+    assert "Stable `0.2.x` contract" in (ROOT / "docs/reference/compatibility.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_changelog_contains_current_version() -> None:

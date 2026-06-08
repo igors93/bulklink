@@ -7,7 +7,7 @@
 Bulklink is a small, typed, zero-dependency library for bulkhead isolation and
 bounded concurrency in Python `asyncio` applications.
 
-Current package version: **0.2.0rc1**. This is a pre-1.0 release candidate.
+Current package version: **0.2.0**. The documented `0.2.x` public contract is stable.
 
 </div>
 

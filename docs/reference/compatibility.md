@@ -1,21 +1,30 @@
 # Compatibility policy
 
 Bulklink supports Python 3.10 through 3.14. The CI matrix runs the full test suite on
-each supported version, while release verification installs the built wheel into a clean
-virtual environment and checks its public typing contract.
+each supported version, with additional Windows and macOS validation. Release
+verification installs the built wheel into a clean virtual environment and checks its
+public typing and runtime contracts.
 
-Starting with 1.0, names exported by `bulklink.__all__` are the stable public API.
+## Stable `0.2.x` contract
 
-Before 1.0, minor releases may adjust behavior or naming when necessary. Changes must
-be documented in the changelog.
+Starting with `0.2.0`, patch releases preserve the documented public contract:
 
-During a release-candidate cycle, new public features are frozen. Candidate updates
-should contain only defect fixes, security hardening, documentation corrections, and
-release-process changes needed to validate the same intended public contract.
+- names and order exported by `bulklink.__all__`;
+- values of public enums;
+- fields of public frozen dataclasses;
+- inheritance relationships of public exceptions;
+- parameter names and calling conventions of the primary public methods;
+- the behavioral guarantees listed below.
 
-Private modules under `bulklink._internal` may change without deprecation.
+A future minor release may intentionally extend or revise the pre-1.0 API, but every
+such change must be documented in the changelog. Private modules under
+`bulklink._internal` may change without deprecation.
 
-Important behavioral contracts:
+Release candidates freeze new public features. Candidate updates should contain only
+defect fixes, security hardening, documentation corrections, compatibility work, and
+release-process changes needed to validate the intended contract.
+
+## Behavioral guarantees
 
 - bounded in-flight work;
 - bounded FIFO waiting;

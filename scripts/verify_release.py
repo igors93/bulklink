@@ -149,11 +149,85 @@ def _verify_installed_wheel(wheel: Path, version: str) -> None:
     smoke = f"""from __future__ import annotations
 
 import asyncio
+from dataclasses import fields
 
 import bulklink
-from bulklink import AsyncBulkhead, BulkheadEventKind, BulkheadRegistry
+from bulklink import (
+    AsyncBulkhead,
+    BulkheadEvent,
+    BulkheadEventKind,
+    BulkheadRegistry,
+    BulkheadStatus,
+)
 
 assert bulklink.__version__ == {version!r}
+assert bulklink.__all__ == [
+    "AsyncBulkhead",
+    "CapacityFinding",
+    "CapacityFindingCode",
+    "CapacityReport",
+    "CapacitySeverity",
+    "BulkheadClosedError",
+    "BulkheadEvent",
+    "BulkheadEventHandler",
+    "BulkheadEventKind",
+    "BulkheadQueueTimeoutError",
+    "BulkheadRegistry",
+    "BulkheadRegistryFailure",
+    "BulkheadRegistryOperationError",
+    "BulkheadSaturatedError",
+    "BulkheadStatus",
+    "BulklinkError",
+]
+assert [member.value for member in BulkheadEventKind] == [
+    "admitted",
+    "queued",
+    "saturated",
+    "expired",
+    "cancelled",
+    "abandoned",
+    "released",
+    "closed",
+    "closed_rejection",
+    "drained",
+    "resized",
+]
+assert tuple(field.name for field in fields(BulkheadEvent)) == (
+    "kind",
+    "label",
+    "occurred_at",
+    "parallelism",
+    "waiting_room",
+    "in_flight",
+    "waiting",
+    "is_closed",
+    "from_queue",
+    "waited_seconds",
+    "affected_waiters",
+    "previous_parallelism",
+)
+assert tuple(field.name for field in fields(BulkheadStatus)) == (
+    "label",
+    "parallelism",
+    "waiting_room",
+    "in_flight",
+    "waiting",
+    "admitted_total",
+    "admitted_from_queue_total",
+    "abandoned_after_admission_total",
+    "queued_total",
+    "saturated_total",
+    "expired_total",
+    "cancelled_while_waiting_total",
+    "closed_before_queue_total",
+    "closed_while_waiting_total",
+    "finished_total",
+    "peak_in_flight",
+    "peak_waiting",
+    "cumulative_wait_seconds",
+    "longest_wait_seconds",
+    "is_closed",
+)
 
 
 async def main() -> None:

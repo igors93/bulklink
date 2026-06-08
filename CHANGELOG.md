@@ -6,6 +6,23 @@ All notable changes to Bulklink will be documented in this file.
 
 No changes yet.
 
+## 0.2.0 - 2026-06-08
+
+### Changed
+
+- Promoted the `0.2.0rc1` behavior and public API to the stable `0.2.0` release.
+- Declared the documented `0.2.x` root exports, enum values, immutable record fields,
+  exception hierarchy, and primary call signatures as patch-release compatibility contracts.
+
+### Added
+
+- Installed-wheel verification of the stable public contract.
+- Contract tests that reject accidental public API drift before packaging or publication.
+
+### Security
+
+- Kept release publication restricted to verified artifacts and PyPI Trusted Publishing.
+
 ## 0.2.0rc1 - 2026-06-07
 
 ### Added

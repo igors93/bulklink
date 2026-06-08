@@ -1,5 +1,7 @@
 # Public API
 
+The `0.2.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
+
 Stable root imports:
 
 ```python

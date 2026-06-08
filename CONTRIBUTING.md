@@ -13,10 +13,14 @@
 9. Keep runtime dependencies at zero unless strongly justified.
 10. Make production behavior explainable.
 
-## Release-candidate discipline
+## Stable patch discipline
 
-After a release candidate is declared, avoid adding new public APIs. Candidate updates
-should focus on defects, security, documentation, compatibility, and release validation.
+The `0.2.x` patch line preserves the documented public contract. Changes to root exports,
+public enum values, frozen record fields, exception inheritance, or primary calling
+conventions require a future minor release and matching contract documentation.
+
+Release candidates freeze new public APIs. Candidate updates should focus on defects,
+security, documentation, compatibility, and release validation.
 
 ## Local verification
 

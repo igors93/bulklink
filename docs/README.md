@@ -20,6 +20,7 @@
 ## Reference
 
 - [Public API](reference/api.md)
+- [Stable public contract](reference/public-contract.md)
 - [Exception behavior](reference/exceptions.md)
 - [Compatibility policy](reference/compatibility.md)
 

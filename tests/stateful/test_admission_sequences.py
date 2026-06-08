@@ -50,9 +50,7 @@ def _first_active(records: list[OperationRecord]) -> OperationRecord | None:
     )
 
 
-@pytest.mark.model
-@pytest.mark.parametrize("seed", range(24))
-async def test_generated_admission_resize_and_cancellation_sequences(seed: int) -> None:
+async def _run_generated_sequence(seed: int) -> None:
     randomizer = random.Random(seed)
     gate = AsyncBulkhead(
         label=f"model-{seed}",
@@ -89,9 +87,9 @@ async def test_generated_admission_resize_and_cancellation_sequences(seed: int) 
     for record in records:
         record.release.set()
 
-    results = await asyncio.wait_for(
-        asyncio.gather(*(record.task for record in records), return_exceptions=True),
-        timeout=5.0,
+    results = await asyncio.gather(
+        *(record.task for record in records),
+        return_exceptions=True,
     )
     for result in results:
         assert result is None or isinstance(
@@ -110,7 +108,12 @@ async def test_generated_admission_resize_and_cancellation_sequences(seed: int) 
 
 
 @pytest.mark.model
-async def test_shutdown_waiters_remain_independent_under_cancellation() -> None:
+@pytest.mark.parametrize("seed", range(24))
+async def test_generated_admission_resize_and_cancellation_sequences(seed: int) -> None:
+    await asyncio.wait_for(_run_generated_sequence(seed), timeout=10.0)
+
+
+async def _run_shutdown_waiter_sequence() -> None:
     gate = AsyncBulkhead(label="model-shutdown", parallelism=2, waiting_room=16)
     records: list[OperationRecord] = []
 
@@ -130,14 +133,14 @@ async def test_shutdown_waiters_remain_independent_under_cancellation() -> None:
     for record in records:
         record.release.set()
 
-    operation_results = await asyncio.wait_for(
-        asyncio.gather(*(record.task for record in records), return_exceptions=True),
-        timeout=5.0,
+    operation_results = await asyncio.gather(
+        *(record.task for record in records),
+        return_exceptions=True,
     )
     for result in operation_results:
         assert result is None or isinstance(result, BulkheadClosedError)
 
-    await asyncio.wait_for(shutdown, timeout=5.0)
+    await shutdown
     waiter_results = await asyncio.gather(*waiters, return_exceptions=True)
     assert sum(isinstance(result, asyncio.CancelledError) for result in waiter_results) == 2
     assert sum(result is None for result in waiter_results) == 4
@@ -145,3 +148,8 @@ async def test_shutdown_waiters_remain_independent_under_cancellation() -> None:
     status = await gate.status()
     assert status.is_drained
     await assert_bulkhead_consistent(gate)
+
+
+@pytest.mark.model
+async def test_shutdown_waiters_remain_independent_under_cancellation() -> None:
+    await asyncio.wait_for(_run_shutdown_waiter_sequence(), timeout=10.0)
