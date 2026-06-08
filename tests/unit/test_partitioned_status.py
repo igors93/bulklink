@@ -199,6 +199,48 @@ async def test_partition_limit_error_does_not_expose_keys() -> None:
     await gate.close_and_wait()
 
 
+async def test_partition_limit_error_message_is_neutral_with_pending_reservation() -> None:
+    """When the block is caused by a pending eviction reservation (active_partitions == 0),
+    the error message must not falsely claim that active partitions are the only reason.
+    """
+    from bulklink import PartitionLimitError
+
+    gate = PartitionedBulkhead(label="neutral-msg", parallelism=1, max_partitions=1)
+    await gate.execute("A", asyncio.sleep, 0)
+
+    evicting_started, allow_close = _pause_victim_close(gate, "A")
+
+    # T1 is evicting A; its reservation blocks new-key creation.
+    t1 = asyncio.create_task(gate.execute("B", asyncio.sleep, 0))
+    await asyncio.wait_for(evicting_started.wait(), timeout=1.0)
+
+    # T2 asks for C: blocked by T1's reservation (active_partitions == 0).
+    with pytest.raises(PartitionLimitError) as exc_info:
+        await gate.execute("C", asyncio.sleep, 0)
+
+    allow_close.set()
+    await asyncio.wait_for(t1, timeout=2.0)
+
+    err = exc_info.value
+    assert err.label == "neutral-msg"
+    assert err.max_partitions == 1
+    assert err.active_partitions == 0
+
+    msg = str(err)
+    # The message must not claim "0 active partitions" implies the reason for rejection.
+    # Specifically: it must NOT say something like "with 0 active partitions" as the
+    # sole explanation (the real reason is a pending reservation).
+    assert "with 0 active partitions" not in msg, (
+        f"Error message falsely attributes the rejection to 0 active partitions: {msg!r}"
+    )
+    # Must communicate no capacity is available.
+    assert "no partition capacity" in msg.lower() or "capacity" in msg.lower(), (
+        f"Error message does not mention capacity: {msg!r}"
+    )
+
+    await gate.close_and_wait()
+
+
 async def _wait_leased(gate: Any, expected: int) -> None:
     from tests.helpers import eventually
 

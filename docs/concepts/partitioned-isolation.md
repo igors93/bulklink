@@ -23,9 +23,12 @@ customer keys continue using their own partitions.
 
 ## Cardinality protection
 
-`max_partitions` is mandatory. When a new key arrives at the limit, Bulklink removes the
-least-recently-used idle partition. If every retained partition currently has admitted or
-waiting callers, the new key is rejected with `PartitionLimitError`.
+`max_partitions` is mandatory. When a new key arrives at the logical capacity limit,
+Bulklink removes the least-recently-used idle partition. A new key is rejected with
+`PartitionLimitError` when no logical capacity is available — this happens when every
+partition is occupied by active callers, when a pending eviction replacement already
+holds the freed slot, or when any other supported transient condition fills the logical
+limit.
 
 The rejection does not include the partition key.
 

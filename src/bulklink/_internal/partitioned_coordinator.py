@@ -16,7 +16,7 @@ from bulklink._internal.validation import (
     require_positive_number,
 )
 from bulklink.bulkhead import AsyncBulkhead
-from bulklink.errors import BulkheadClosedError, PartitionLimitError
+from bulklink.errors import BulkheadClosedError, BulkheadQueueTimeoutError, PartitionLimitError
 from bulklink.partitioned_status import PartitionedBulkheadStatus
 
 
@@ -49,6 +49,12 @@ class PartitionCoordinator:
         # closing it before creating the replacement.  Included in capacity
         # accounting so no other task can claim the slot being reclaimed.
         self._reserved_slots = 0
+        # Counts children that have been removed from _partitions but whose
+        # close_and_wait() has not yet finished.  cleanup_idle() and discard()
+        # increment this under the lock before releasing it, and each close
+        # decrements it in a finally block so the drain signal is not raised
+        # while child teardown is still in flight.
+        self._pending_child_closures = 0
         self._closed = False
         self._owner_loop: asyncio.AbstractEventLoop | None = None
         self._drained_event: asyncio.Event | None = None
@@ -98,8 +104,26 @@ class PartitionCoordinator:
             raise TypeError("partition must be hashable") from None
         return key
 
-    async def acquire(self, key: Hashable) -> PartitionEntry:
-        """Borrow one partition, creating or reclaiming capacity when necessary."""
+    async def acquire(
+        self,
+        key: Hashable,
+        *,
+        deadline: float | None = None,
+        immediate: bool = False,
+        budget_for_error: float | None = None,
+    ) -> PartitionEntry:
+        """Borrow one partition, creating or reclaiming capacity when necessary.
+
+        Args:
+            key: Partition key to acquire.
+            deadline: Absolute event-loop time after which the attempt is abandoned.
+                Checked before each blocking operation; not enforced mid-close because
+                complete_cleanup() must run to maintain invariants.
+            immediate: When True (slot_now semantics), reject instead of waiting for
+                victim closure.  The mutex itself is still acquired briefly.
+            budget_for_error: Original wait budget in seconds, used in the
+                BulkheadQueueTimeoutError when the deadline expires.
+        """
         normalized = self.validated_key(key)
         loop = self._bind_to_running_loop()
         # True once this task has removed a victim and incremented _reserved_slots.
@@ -113,6 +137,13 @@ class PartitionCoordinator:
                 async with self._mutex:
                     if self._closed:
                         raise BulkheadClosedError(label=self._label)
+
+                    # Check the admission deadline before doing any work.
+                    if deadline is not None and loop.time() >= deadline:
+                        raise BulkheadQueueTimeoutError(
+                            label=self._label,
+                            wait_limit=budget_for_error if budget_for_error is not None else 0.0,
+                        )
 
                     entry = self._partitions.get(normalized)
                     if entry is not None:
@@ -142,6 +173,16 @@ class PartitionCoordinator:
                             active_partitions=self._active_partitions_locked(),
                         )
 
+                    if immediate:
+                        # slot_now() semantics: cannot wait for victim closure.
+                        # Reject at the limit so callers get the standard error.
+                        self._counters.limit_rejected_total += 1
+                        raise PartitionLimitError(
+                            label=self._label,
+                            max_partitions=self._max_partitions,
+                            active_partitions=self._active_partitions_locked(),
+                        )
+
                     # Reserve the freed slot before releasing the lock.  Any task
                     # that checks capacity while we close the victim will see logical
                     # at max_partitions and cannot steal the slot we are reclaiming.
@@ -151,6 +192,12 @@ class PartitionCoordinator:
                     has_reservation = True
 
                 await complete_cleanup(victim.bulkhead.close_and_wait())
+                # After victim close, re-check deadline before creating the replacement.
+                if deadline is not None and loop.time() >= deadline:
+                    raise BulkheadQueueTimeoutError(
+                        label=self._label,
+                        wait_limit=budget_for_error if budget_for_error is not None else 0.0,
+                    )
                 # Loop continues: next iteration creates the replacement entry.
 
         except BaseException:
@@ -189,8 +236,17 @@ class PartitionCoordinator:
             for entry in victims:
                 del self._partitions[entry.key]
             self._counters.evicted_total += len(victims)
+            # Register maintenance before releasing the lock so the drain condition
+            # cannot fire while these children are still being torn down.
+            self._pending_child_closures += len(victims)
 
-        await complete_cleanup(_close_entries(victims))
+        if not victims:
+            return 0
+
+        # Close each victim independently so each one releases its own maintenance
+        # slot.  return_exceptions prevents one failure from orphaning remaining
+        # tasks (and their maintenance releases).
+        await complete_cleanup(_close_with_tracking(self, victims))
         return len(victims)
 
     async def discard(self, key: Hashable) -> bool:
@@ -204,8 +260,10 @@ class PartitionCoordinator:
                 return False
             del self._partitions[normalized]
             self._counters.discarded_total += 1
+            # Register maintenance before releasing the lock.
+            self._pending_child_closures += 1
 
-        await complete_cleanup(entry.bulkhead.close_and_wait())
+        await complete_cleanup(self._close_child_and_release_maintenance(entry.bulkhead))
         return True
 
     async def status(self) -> PartitionedBulkheadStatus:
@@ -282,9 +340,18 @@ class PartitionCoordinator:
         return event
 
     def _signal_drained_locked(self) -> None:
-        # All three conditions must hold: pending reservations indicate tasks that
-        # are mid-eviction and may still create a new partition or release a lease.
-        if self._closed and self._leased_operations == 0 and self._reserved_slots == 0:
+        # All four conditions must hold before the manager is considered drained:
+        # - closed: no new work is accepted
+        # - leased_operations == 0: no outstanding admission slots
+        # - reserved_slots == 0: no pending eviction replacements
+        # - pending_child_closures == 0: no children still being torn down by
+        #   cleanup_idle() or discard()
+        if (
+            self._closed
+            and self._leased_operations == 0
+            and self._reserved_slots == 0
+            and self._pending_child_closures == 0
+        ):
             self._drain_signal().set()
 
     async def _release_reserved_slot(self) -> None:
@@ -302,6 +369,26 @@ class PartitionCoordinator:
                 )
             self._reserved_slots -= 1
             self._signal_drained_locked()
+
+    async def _close_child_and_release_maintenance(self, bulkhead: AsyncBulkhead) -> None:
+        """Close one removed child and release its maintenance slot when done.
+
+        The slot is registered under the mutex before the child is removed, so the
+        drain signal cannot fire while the child is still tearing down.  The finally
+        block ensures the counter is always decremented, even when the close raises
+        or the task is cancelled via complete_cleanup().
+        """
+        try:
+            await bulkhead.close_and_wait()
+        finally:
+            async with self._mutex:
+                if self._pending_child_closures <= 0:
+                    raise RuntimeError(
+                        "maintenance slot released without a matching registration: "
+                        "invariant violation in PartitionCoordinator"
+                    )
+                self._pending_child_closures -= 1
+                self._signal_drained_locked()
 
     def _create_locked(self, key: Hashable, *, now: float) -> PartitionEntry:
         entry = PartitionEntry(
@@ -352,3 +439,24 @@ async def _close_entries_without_wait(entries: tuple[PartitionEntry, ...]) -> No
 async def _wait_entries(entries: tuple[PartitionEntry, ...]) -> None:
     if entries:
         await asyncio.gather(*(entry.bulkhead.wait_closed() for entry in entries))
+
+
+async def _close_with_tracking(
+    coordinator: PartitionCoordinator,
+    victims: tuple[PartitionEntry, ...],
+) -> None:
+    """Close each victim independently and release its maintenance slot when done.
+
+    Uses return_exceptions so a failure in one close operation does not abandon the
+    remaining tasks and their maintenance releases.  The first error is re-raised
+    after all closures have settled.
+    """
+    results: list[BaseException | None] = list(
+        await asyncio.gather(
+            *(coordinator._close_child_and_release_maintenance(e.bulkhead) for e in victims),
+            return_exceptions=True,
+        )
+    )
+    errors = [r for r in results if isinstance(r, BaseException)]
+    if errors:
+        raise errors[0]

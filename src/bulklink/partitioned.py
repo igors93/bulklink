@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Hashable
 
 from bulklink._internal.cancellation import complete_cleanup
@@ -13,25 +14,83 @@ from bulklink.bulkhead import AsyncBulkhead
 from bulklink.partitioned_status import PartitionedBulkheadStatus
 from bulklink.typing import P, T
 
+# Factory that receives the child bulkhead and an absolute event-loop deadline
+# (or None when no deadline is in effect) and returns a configured SlotContext.
+_ChildContextFactory = Callable[[AsyncBulkhead, float | None], SlotContext]
+
+
+def _child_slot_with_deadline(bulkhead: AsyncBulkhead, deadline: float | None) -> SlotContext:
+    """Return the appropriate child context depending on whether a deadline applies."""
+    if deadline is not None:
+        return bulkhead.slot_before(deadline)
+    return bulkhead.slot()
+
+
+def _child_slot_now(bulkhead: AsyncBulkhead, deadline: float | None) -> SlotContext:
+    """Return an immediate child context regardless of any deadline."""
+    return bulkhead.slot_now()
+
 
 class _PartitionAdmission:
-    """Bridge one manager reference to one child slot lifecycle."""
+    """Bridge one manager reference to one child slot lifecycle.
+
+    The admission budget (deadline) is computed at __aenter__ time so that relative
+    limits (wait_limit, slot_within) start when the caller actually begins waiting,
+    not when the SlotContext object was constructed.  The same absolute deadline is
+    forwarded to child admission so manager resolution time is deducted from the
+    caller's budget.
+    """
 
     def __init__(
         self,
         owner: PartitionCoordinator,
         key: Hashable,
-        context_factory: Callable[[AsyncBulkhead], SlotContext],
+        immediate: bool,
+        relative_limit: float | None,
+        absolute_deadline: float | None,
+        context_factory: _ChildContextFactory,
     ) -> None:
         self._owner = owner
         self._key = key
+        # Exactly one of (immediate, relative_limit, absolute_deadline) governs
+        # how the effective deadline is computed at admit() time.
+        self._immediate = immediate
+        self._relative_limit = relative_limit
+        self._absolute_deadline = absolute_deadline
         self._context_factory = context_factory
         self._entry: PartitionEntry | None = None
         self._context: SlotContext | None = None
 
     async def admit(self) -> None:
-        entry = await self._owner.acquire(self._key)
-        context = self._context_factory(entry.bulkhead)
+        loop = asyncio.get_running_loop()
+
+        # Compute the effective absolute deadline at the moment __aenter__ begins.
+        # For relative limits this defers the start time to actual admission, not
+        # SlotContext construction.
+        if self._immediate:
+            deadline: float | None = None
+            budget_for_error: float | None = None
+        elif self._absolute_deadline is not None:
+            deadline = self._absolute_deadline
+            budget_for_error = max(0.0, self._absolute_deadline - loop.time())
+        elif self._relative_limit is not None:
+            deadline = loop.time() + self._relative_limit
+            budget_for_error = self._relative_limit
+        else:
+            deadline = None
+            budget_for_error = None
+
+        entry = await self._owner.acquire(
+            self._key,
+            deadline=deadline,
+            immediate=self._immediate,
+            budget_for_error=budget_for_error,
+        )
+
+        # Pass the same absolute deadline to child admission.  The child computes the
+        # remaining time as (deadline - loop.time()), automatically deducting whatever
+        # the manager layer consumed.
+        context = self._context_factory(entry.bulkhead, deadline)
         try:
             await context.__aenter__()
         except BaseException:
@@ -120,21 +179,45 @@ class PartitionedBulkhead:
 
     def slot(self, partition: Hashable, /) -> SlotContext:
         """Return a context manager using one isolated partition."""
-        return self._slot(partition, lambda bulkhead: bulkhead.slot())
+        return self._slot(
+            partition,
+            immediate=False,
+            relative_limit=self._coordinator.wait_limit,
+            absolute_deadline=None,
+            context_factory=_child_slot_with_deadline,
+        )
 
     def slot_now(self, partition: Hashable, /) -> SlotContext:
         """Return a partition context that rejects instead of waiting."""
-        return self._slot(partition, lambda bulkhead: bulkhead.slot_now())
+        return self._slot(
+            partition,
+            immediate=True,
+            relative_limit=None,
+            absolute_deadline=None,
+            context_factory=_child_slot_now,
+        )
 
     def slot_within(self, wait_limit: float, partition: Hashable, /) -> SlotContext:
         """Return a partition context with a shorter relative wait limit."""
         effective = resolve_wait_limit(self.wait_limit, wait_limit)
-        return self._slot(partition, lambda bulkhead: bulkhead.slot_within(effective))
+        return self._slot(
+            partition,
+            immediate=False,
+            relative_limit=effective,
+            absolute_deadline=None,
+            context_factory=_child_slot_with_deadline,
+        )
 
     def slot_before(self, deadline: float, partition: Hashable, /) -> SlotContext:
         """Return a partition context admitted before an absolute loop deadline."""
         validated = require_finite_number("deadline", deadline)
-        return self._slot(partition, lambda bulkhead: bulkhead.slot_before(validated))
+        return self._slot(
+            partition,
+            immediate=False,
+            relative_limit=None,
+            absolute_deadline=validated,
+            context_factory=_child_slot_with_deadline,
+        )
 
     async def execute(
         self,
@@ -213,8 +296,18 @@ class PartitionedBulkhead:
     def _slot(
         self,
         partition: Hashable,
-        context_factory: Callable[[AsyncBulkhead], SlotContext],
+        immediate: bool,
+        relative_limit: float | None,
+        absolute_deadline: float | None,
+        context_factory: _ChildContextFactory,
     ) -> SlotContext:
         key = self._coordinator.validated_key(partition)
-        admission = _PartitionAdmission(self._coordinator, key, context_factory)
+        admission = _PartitionAdmission(
+            self._coordinator,
+            key,
+            immediate=immediate,
+            relative_limit=relative_limit,
+            absolute_deadline=absolute_deadline,
+            context_factory=context_factory,
+        )
         return SlotContext(admit=admission.admit, release=admission.release)

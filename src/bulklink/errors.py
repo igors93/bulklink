@@ -79,7 +79,12 @@ class WeightedBulkheadSaturatedError(BulklinkError):
 
 
 class PartitionLimitError(BulklinkError):
-    """Raised when no new partition can be retained without evicting active work."""
+    """Raised when no new partition can be admitted due to insufficient capacity.
+
+    The capacity limit may be reached because all ``max_partitions`` slots are
+    occupied by active partitions, pending eviction replacements, or a combination
+    of both.  ``active_partitions`` reflects the snapshot count at rejection time.
+    """
 
     def __init__(
         self,
@@ -92,6 +97,6 @@ class PartitionLimitError(BulklinkError):
         self.max_partitions = max_partitions
         self.active_partitions = active_partitions
         super().__init__(
-            f"partitioned bulkhead {label!r} reached max_partitions={max_partitions} "
-            f"with {active_partitions} active partitions"
+            f"partitioned bulkhead {label!r} has no partition capacity available "
+            f"(max_partitions={max_partitions}, active_partitions={active_partitions})"
         )

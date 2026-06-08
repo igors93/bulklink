@@ -686,6 +686,265 @@ async def test_close_and_wait_waits_for_pending_reservation() -> None:
     assert final.leased_operations == 0
 
 
+# ---------------------------------------------------------------------------
+# Part 2: close_and_wait() must wait for cleanup_idle() and discard() in progress
+# ---------------------------------------------------------------------------
+
+
+def _pause_child_close(entry: Any) -> tuple[asyncio.Event, asyncio.Event]:
+    """Intercept close_and_wait on a PartitionEntry so the test controls timing."""
+    closed_started = asyncio.Event()
+    allow_close = asyncio.Event()
+    original = entry.bulkhead.close_and_wait
+
+    async def controlled_close() -> None:
+        closed_started.set()
+        await allow_close.wait()
+        await original()
+
+    entry.bulkhead.close_and_wait = controlled_close  # type: ignore[method-assign]
+    return closed_started, allow_close
+
+
+async def test_close_and_wait_waits_for_cleanup_idle_in_progress() -> None:
+    """close_and_wait() must not complete while cleanup_idle() is closing a victim.
+
+    cleanup_idle() removes the partition from the map under the lock, then
+    closes it outside the lock.  During that window the manager may appear empty
+    to the drain logic.  The maintenance counter must prevent premature drain.
+    """
+    gate = PartitionedBulkhead(
+        label="idle-drain",
+        parallelism=1,
+        max_partitions=2,
+        idle_timeout=0.05,
+    )
+    await gate.execute("A", asyncio.sleep, 0)
+    await asyncio.sleep(0.1)  # ensure idle_timeout has elapsed (50ms threshold)
+
+    coordinator = gate._coordinator  # type: ignore[attr-defined]
+    entry_a = coordinator._partitions["A"]
+    closed_started, allow_close = _pause_child_close(entry_a)
+
+    # Start cleanup_idle() in a background task.
+    cleanup_task = asyncio.create_task(gate.cleanup_idle())
+
+    # Wait for cleanup to have removed "A" from the map and started closing it.
+    await asyncio.wait_for(closed_started.wait(), timeout=2.0)
+
+    # At this point: partitions={}, leases=0, reservations=0 — but close is pending.
+    # close_and_wait() must NOT complete immediately.
+    close_task = asyncio.create_task(gate.close_and_wait())
+
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert not close_task.done(), (
+        "close_and_wait() completed prematurely while cleanup_idle() was still closing a child"
+    )
+
+    # Allow the child close to finish.
+    allow_close.set()
+
+    removed = await asyncio.wait_for(cleanup_task, timeout=3.0)
+    assert removed == 1
+
+    await asyncio.wait_for(close_task, timeout=3.0)
+
+    assert coordinator._pending_child_closures == 0  # type: ignore[attr-defined]
+    final = await gate.status()
+    assert final.is_closed
+    assert final.partition_count == 0
+    assert final.leased_operations == 0
+
+
+async def test_close_and_wait_waits_for_discard_in_progress() -> None:
+    """close_and_wait() must not complete while discard() is closing a child."""
+    gate = PartitionedBulkhead(label="discard-drain", parallelism=1, max_partitions=1)
+    await gate.execute("A", asyncio.sleep, 0)
+
+    coordinator = gate._coordinator  # type: ignore[attr-defined]
+    entry_a = coordinator._partitions["A"]
+    closed_started, allow_close = _pause_child_close(entry_a)
+
+    discard_task = asyncio.create_task(gate.discard("A"))
+    await asyncio.wait_for(closed_started.wait(), timeout=1.0)
+
+    close_task = asyncio.create_task(gate.close_and_wait())
+
+    for _ in range(4):
+        await asyncio.sleep(0)
+
+    assert not close_task.done(), (
+        "close_and_wait() completed prematurely while discard() was still closing a child"
+    )
+
+    allow_close.set()
+
+    result = await asyncio.wait_for(discard_task, timeout=2.0)
+    assert result is True
+
+    await asyncio.wait_for(close_task, timeout=2.0)
+
+    assert coordinator._pending_child_closures == 0  # type: ignore[attr-defined]
+    final = await gate.status()
+    assert final.is_closed
+    assert final.partition_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Part 1: Admission budget covering manager and child
+# ---------------------------------------------------------------------------
+
+
+async def test_execute_now_rejects_immediately_when_eviction_is_required() -> None:
+    """execute_now() must not wait for victim closure.
+
+    Current bug: acquire() does eviction even for slot_now(), blocking the caller
+    until the victim's close_and_wait() completes.
+    With the fix: acquire(immediate=True) raises PartitionLimitError before touching
+    the victim.
+    """
+    gate = PartitionedBulkhead(label="now-evict", parallelism=1, max_partitions=1)
+    await gate.execute("A", asyncio.sleep, 0)
+
+    coordinator = gate._coordinator  # type: ignore[attr-defined]
+    entry_a = coordinator._partitions["A"]
+    close_called = asyncio.Event()
+    original = entry_a.bulkhead.close_and_wait
+
+    async def detecting_close() -> None:
+        close_called.set()
+        await original()
+
+    entry_a.bulkhead.close_and_wait = detecting_close  # type: ignore[method-assign]
+
+    with pytest.raises(PartitionLimitError) as exc_info:
+        await gate.execute_now("B", asyncio.sleep, 0)
+
+    assert not close_called.is_set(), (
+        "execute_now() triggered victim closure — should reject without touching the victim"
+    )
+    assert "A" in coordinator._partitions, "victim must not be evicted by execute_now()"
+    assert coordinator._reserved_slots == 0
+
+    err = exc_info.value
+    assert err.label == "now-evict"
+    assert err.max_partitions == 1
+
+    status = await gate.status()
+    assert status.partition_count == 1
+    assert status.evicted_total == 0
+
+    await gate.close_and_wait()
+
+
+async def test_execute_now_does_not_enter_child_queue() -> None:
+    """execute_now() must not queue inside a child that already has a slot holder."""
+    gate = PartitionedBulkhead(
+        label="now-queue",
+        parallelism=1,
+        max_partitions=1,
+        waiting_room=5,
+    )
+    release = asyncio.Event()
+
+    active = asyncio.create_task(gate.execute("alpha", release.wait))
+    await eventually(lambda: has_leased_operations(gate, 1))
+
+    from bulklink import BulkheadSaturatedError
+
+    with pytest.raises(BulkheadSaturatedError):
+        await gate.execute_now("alpha", asyncio.sleep, 0)
+
+    release.set()
+    await active
+    await gate.close_and_wait()
+
+
+async def test_execute_before_expired_deadline_does_not_create_partition() -> None:
+    """An already-expired deadline must not create a new partition or do any work."""
+    loop = asyncio.get_running_loop()
+    gate = PartitionedBulkhead(label="before-expired", parallelism=1, max_partitions=2)
+
+    from bulklink import BulkheadQueueTimeoutError
+
+    past_deadline = loop.time() - 1.0  # definitely in the past
+
+    with pytest.raises(BulkheadQueueTimeoutError):
+        await gate.execute_before(past_deadline, "A", asyncio.sleep, 0)
+
+    status = await gate.status()
+    assert status.partition_count == 0, "expired deadline must not create a partition"
+    assert status.created_total == 0
+    assert status.evicted_total == 0
+    assert status.leased_operations == 0
+
+    await gate.close_and_wait()
+
+
+async def test_execute_within_budget_includes_manager_eviction_time() -> None:
+    """The execute_within() deadline must cover manager resolution time.
+
+    If the manager blocks eviction and the deadline expires, the caller must receive
+    BulkheadQueueTimeoutError.  Without the fix the manager has no deadline and the
+    child would get the full budget after the manager has already consumed it.
+    """
+    from bulklink import BulkheadQueueTimeoutError
+
+    gate = PartitionedBulkhead(label="within-budget", parallelism=1, max_partitions=1)
+    await gate.execute("A", asyncio.sleep, 0)
+
+    evicting_started, allow_close = _pause_victim_close(gate, "A")
+
+    # 50 ms budget — victim close will take ~150 ms.
+    t1 = asyncio.create_task(gate.execute_within(0.05, "B", asyncio.sleep, 0))
+    await asyncio.wait_for(evicting_started.wait(), timeout=1.0)
+
+    # Let the deadline expire while the victim is paused.
+    await asyncio.sleep(0.15)
+
+    # Release the victim so acquire() can detect the expired deadline.
+    allow_close.set()
+
+    with pytest.raises(BulkheadQueueTimeoutError):
+        await asyncio.wait_for(t1, timeout=3.0)
+
+    coordinator = gate._coordinator  # type: ignore[attr-defined]
+    assert coordinator._reserved_slots == 0, "reservation must be released on timeout"
+
+    await gate.close_and_wait()
+
+
+async def test_admitted_operation_not_cancelled_when_deadline_passes() -> None:
+    """A deadline must only constrain admission; it must not cancel a running operation."""
+    loop = asyncio.get_running_loop()
+    gate = PartitionedBulkhead(label="no-cancel", parallelism=1, max_partitions=1)
+
+    # Deadline far enough in the future to admit but check post-admission behaviour.
+    deadline = loop.time() + 5.0
+
+    admitted = asyncio.Event()
+    release = asyncio.Event()
+
+    async def work() -> int:
+        admitted.set()
+        await release.wait()
+        return 42
+
+    task = asyncio.create_task(gate.execute_before(deadline, "A", work))
+    await asyncio.wait_for(admitted.wait(), timeout=1.0)
+
+    # Simulate deadline passing while the operation is running.
+    await asyncio.sleep(0)
+
+    release.set()
+    result = await asyncio.wait_for(task, timeout=2.0)
+    assert result == 42, "running operation must not be affected by deadline"
+
+    await gate.close_and_wait()
+
+
 async def test_cancelling_shutdown_waiter_does_not_disrupt_close() -> None:
     """Cancelling one wait_closed() waiter must not affect the manager or other waiters."""
     gate = PartitionedBulkhead(label="waiter-cancel", parallelism=1, max_partitions=1)

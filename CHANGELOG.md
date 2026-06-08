@@ -4,7 +4,36 @@ All notable changes to Bulklink will be documented in this file.
 
 ## Unreleased
 
-No changes yet.
+### Fixed
+
+- `PartitionedBulkhead` eviction no longer races: the task that selects and removes
+  an idle victim holds a logical reservation slot, preventing any other task from
+  claiming the freed capacity before the replacement partition is created.
+- Reservation rollback under repeated cancellation is now safe: the rollback acquires
+  the manager lock inside `complete_cleanup()`, so a second `cancel()` arriving while
+  the rollback waits for the lock cannot leave `_reserved_slots` permanently elevated.
+- `close_and_wait()` now waits for all pending eviction reservations before signalling
+  drain; previously the manager could declare shutdown complete while a mid-eviction
+  replacement was still pending.
+- `close_and_wait()` now waits for `cleanup_idle()` and `discard()` child closures
+  that were already in progress; previously the manager could report fully closed while
+  removed children were still tearing down outside the partition map.
+- `slot_now()` and `execute_now()` no longer block on victim closure when the
+  partition limit is reached with an idle-but-evictable partition; they now raise
+  `PartitionLimitError` immediately without modifying the partition map.
+- Admission deadlines (`slot_within`, `slot_before`, configured `wait_limit`) now
+  cover the full admission path — manager resolution and eviction time are deducted
+  from the caller's budget before the child bulkhead sees the remaining limit.  An
+  expired deadline detected after victim closure raises `BulkheadQueueTimeoutError`
+  and releases the reservation without leaking state.
+- `PartitionLimitError` message no longer attributes the rejection solely to active
+  partitions; the wording is neutral so that rejections caused by pending eviction
+  reservations are not described as "0 active partitions."
+
+### Security
+
+- GitHub Actions workflow steps are now pinned to verified commit SHAs rather than
+  mutable version tags, preventing tag-redirect supply-chain attacks.
 
 ## 0.6.0 - 2026-06-08
 
