@@ -182,3 +182,16 @@ await registry.close_and_wait()
 Use a registry when one application owns several bulkheads and needs ordered status
 collection or one coordinated shutdown. Direct `AsyncBulkhead` construction remains the
 simplest option for isolated usage.
+
+
+## Absolute admission deadline
+
+Use the event loop's monotonic clock when a request already has a total time budget:
+
+```python
+loop = asyncio.get_running_loop()
+deadline = loop.time() + 0.5
+result = await payments.execute_before(deadline, send_payment, order)
+```
+
+The deadline limits only how long the call may wait for admission.

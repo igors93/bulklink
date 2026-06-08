@@ -218,6 +218,7 @@ assert tuple(field.name for field in fields(BulkheadStatus)) == (
     "queued_total",
     "saturated_total",
     "expired_total",
+    "expired_before_queue_total",
     "cancelled_while_waiting_total",
     "closed_before_queue_total",
     "closed_while_waiting_total",
@@ -235,6 +236,13 @@ async def main() -> None:
     gate = AsyncBulkhead(label="installed", parallelism=1, waiting_room=1)
     gate.add_event_handler(events.append)
     assert await gate.execute(asyncio.sleep, 0, result="ok") == "ok"
+    loop = asyncio.get_running_loop()
+    assert await gate.execute_before(
+        loop.time() + 1.0,
+        asyncio.sleep,
+        0,
+        result="deadline-ok",
+    ) == "deadline-ok"
     await gate.resize(2)
     assert (await gate.status()).parallelism == 2
     assert (await gate.capacity_report()).status.label == "installed"

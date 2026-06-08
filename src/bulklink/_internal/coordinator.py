@@ -10,6 +10,7 @@ from bulklink._internal.cancellation import complete_cleanup
 from bulklink._internal.events import EventDispatcher
 from bulklink._internal.models import RuntimeCounters, WaitEntry, WaitState
 from bulklink._internal.validation import (
+    require_finite_number,
     require_label,
     require_non_negative_integer,
     require_optional_positive_number,
@@ -78,6 +79,10 @@ class AdmissionCoordinator:
         """Return the shortest limit allowed for one queued admission."""
         return resolve_wait_limit(self._wait_limit, requested)
 
+    def validated_deadline(self, deadline: float) -> float:
+        """Return one finite absolute event-loop deadline."""
+        return require_finite_number("deadline", deadline)
+
     async def resize(self, parallelism: int) -> None:
         """Change execution capacity without cancelling admitted operations."""
         requested = require_positive_integer("parallelism", parallelism)
@@ -132,46 +137,80 @@ class AdmissionCoordinator:
         """Admit using a per-call wait limit no longer than the configured limit."""
         await self._enter(self.effective_wait_limit(wait_limit))
 
-    async def _enter(self, wait_limit: float | None) -> None:
+    async def enter_before(self, deadline: float) -> None:
+        """Admit before one absolute event-loop deadline."""
+        await self._enter(self._wait_limit, deadline=self.validated_deadline(deadline))
+
+    async def _enter(
+        self,
+        wait_limit: float | None,
+        *,
+        deadline: float | None = None,
+    ) -> None:
         loop = self._bind_to_running_loop()
         entry: WaitEntry | None = None
         error: Exception | None = None
-        events: tuple[BulkheadEvent, ...]
+        events: tuple[BulkheadEvent, ...] = ()
+        expires_at: float | None = None
+        effective_wait_limit = wait_limit
 
         async with self._mutex:
             if self._closed:
                 self._counters.closed_before_queue_total += 1
                 error = BulkheadClosedError(label=self._label)
                 events = (self._event_locked(BulkheadEventKind.CLOSED_REJECTION),)
-            elif self._can_admit_directly_locked():
-                events = (self._grant_directly_locked(),)
-            elif len(self._waiters) >= self._waiting_room:
-                self._counters.saturated_total += 1
-                error = BulkheadSaturatedError(
-                    label=self._label,
-                    in_flight=self._in_flight,
-                    waiting=len(self._waiters),
-                    parallelism=self._parallelism,
-                    waiting_room=self._waiting_room,
-                )
-                events = (self._event_locked(BulkheadEventKind.SATURATED),)
             else:
-                entry = WaitEntry(
-                    future=loop.create_future(),
-                    enqueued_at=monotonic(),
-                )
-                self._waiters.append(entry)
-                self._counters.queued_total += 1
-                self._counters.peak_waiting = max(
-                    self._counters.peak_waiting,
-                    len(self._waiters),
-                )
-                events = (
-                    self._event_locked(
-                        BulkheadEventKind.QUEUED,
-                        from_queue=True,
-                    ),
-                )
+                now = loop.time()
+                if deadline is not None:
+                    remaining = deadline - now
+                    if remaining <= 0:
+                        self._counters.expired_before_queue_total += 1
+                        effective_wait_limit = 0.0
+                        error = BulkheadQueueTimeoutError(
+                            label=self._label,
+                            wait_limit=effective_wait_limit,
+                        )
+                        events = (
+                            self._event_locked(
+                                BulkheadEventKind.EXPIRED,
+                                waited_seconds=0.0,
+                            ),
+                        )
+                    else:
+                        expires_at = deadline
+                        if wait_limit is not None:
+                            expires_at = min(expires_at, now + wait_limit)
+                        effective_wait_limit = max(0.0, expires_at - now)
+
+                if error is None and self._can_admit_directly_locked():
+                    events = (self._grant_directly_locked(),)
+                elif error is None and len(self._waiters) >= self._waiting_room:
+                    self._counters.saturated_total += 1
+                    error = BulkheadSaturatedError(
+                        label=self._label,
+                        in_flight=self._in_flight,
+                        waiting=len(self._waiters),
+                        parallelism=self._parallelism,
+                        waiting_room=self._waiting_room,
+                    )
+                    events = (self._event_locked(BulkheadEventKind.SATURATED),)
+                elif error is None:
+                    entry = WaitEntry(
+                        future=loop.create_future(),
+                        enqueued_at=monotonic(),
+                    )
+                    self._waiters.append(entry)
+                    self._counters.queued_total += 1
+                    self._counters.peak_waiting = max(
+                        self._counters.peak_waiting,
+                        len(self._waiters),
+                    )
+                    events = (
+                        self._event_locked(
+                            BulkheadEventKind.QUEUED,
+                            from_queue=True,
+                        ),
+                    )
 
         self._event_dispatcher.dispatch(events)
         if error is not None:
@@ -180,7 +219,11 @@ class AdmissionCoordinator:
             return
 
         try:
-            state = await self._await_terminal_state(entry, wait_limit)
+            state = await self._await_terminal_state(
+                entry,
+                effective_wait_limit,
+                expires_at=expires_at,
+            )
         except asyncio.TimeoutError as timeout_error:
             try:
                 state = await complete_cleanup(self._expire_waiter(entry))
@@ -197,13 +240,13 @@ class AdmissionCoordinator:
                     f"unexpected wait state after timeout: {state.name}"
                 ) from timeout_error
 
-            if wait_limit is None:
+            if effective_wait_limit is None:
                 raise RuntimeError(
                     "a queued admission expired without a wait limit"
                 ) from timeout_error
             raise BulkheadQueueTimeoutError(
                 label=self._label,
-                wait_limit=wait_limit,
+                wait_limit=effective_wait_limit,
             ) from timeout_error
         except asyncio.CancelledError:
             await complete_cleanup(self._cancel_waiter(entry))
@@ -214,11 +257,11 @@ class AdmissionCoordinator:
         if state is WaitState.CLOSED:
             raise BulkheadClosedError(label=self._label)
         if state is WaitState.EXPIRED:
-            if wait_limit is None:
+            if effective_wait_limit is None:
                 raise RuntimeError("a queued admission expired without a wait limit")
             raise BulkheadQueueTimeoutError(
                 label=self._label,
-                wait_limit=wait_limit,
+                wait_limit=effective_wait_limit,
             )
         if state is WaitState.CANCELLED:
             raise asyncio.CancelledError
@@ -259,7 +302,11 @@ class AdmissionCoordinator:
         self,
         entry: WaitEntry,
         wait_limit: float | None,
+        *,
+        expires_at: float | None = None,
     ) -> WaitState:
+        if expires_at is not None:
+            wait_limit = max(0.0, expires_at - asyncio.get_running_loop().time())
         if wait_limit is None:
             return await asyncio.shield(entry.future)
         return await asyncio.wait_for(
@@ -583,6 +630,7 @@ class AdmissionCoordinator:
                 queued_total=counters.queued_total,
                 saturated_total=counters.saturated_total,
                 expired_total=counters.expired_total,
+                expired_before_queue_total=counters.expired_before_queue_total,
                 cancelled_while_waiting_total=counters.cancelled_while_waiting_total,
                 closed_before_queue_total=counters.closed_before_queue_total,
                 closed_while_waiting_total=counters.closed_while_waiting_total,

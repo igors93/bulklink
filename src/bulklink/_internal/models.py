@@ -51,6 +51,7 @@ class RuntimeCounters:
     queued_total: int = 0
     saturated_total: int = 0
     expired_total: int = 0
+    expired_before_queue_total: int = 0
     cancelled_while_waiting_total: int = 0
     closed_before_queue_total: int = 0
     closed_while_waiting_total: int = 0

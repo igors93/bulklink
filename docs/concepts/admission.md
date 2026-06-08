@@ -37,6 +37,23 @@ and the requested value. A per-call limit can never extend the bulkhead default.
 The limit starts after the operation enters the waiting room and ends when a slot is
 admitted. Time spent inside the protected operation is not included.
 
+## Absolute admission deadlines
+
+`slot_before(deadline)` and `execute_before(deadline, operation, ...)` accept an absolute
+deadline measured by `asyncio.get_running_loop().time()`. This lets a caller propagate the
+time remaining in a larger request budget without resetting that budget at each layer.
+
+```python
+loop = asyncio.get_running_loop()
+deadline = loop.time() + 0.5
+result = await gate.execute_before(deadline, operation)
+```
+
+The effective queue limit is the earlier of the absolute deadline and the configured
+`wait_limit`. A deadline that has already elapsed is rejected before queue entry. Closed
+state still has priority over deadline expiration. The deadline controls admission only;
+a protected operation is not cancelled after it starts.
+
 
 ## Dynamic execution capacity
 

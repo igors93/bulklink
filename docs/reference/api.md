@@ -1,6 +1,6 @@
 # Public API
 
-The `0.2.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
+The `0.3.x` compatibility surface is recorded in [Stable public contract](public-contract.md).
 
 Stable root imports:
 
@@ -42,9 +42,11 @@ Methods:
 - `slot()` returns a context manager that may wait for capacity;
 - `slot_now()` returns a context manager that rejects instead of waiting;
 - `slot_within(limit)` returns a context manager with a stricter queue wait limit;
+- `slot_before(deadline)` returns a context manager bounded by an absolute loop deadline;
 - `execute(operation, *args, **kwargs)` protects one async call and may wait;
 - `execute_now(operation, *args, **kwargs)` protects one async call without queueing;
 - `execute_within(limit, operation, *args, **kwargs)` uses a stricter queue wait limit;
+- `execute_before(deadline, operation, *args, **kwargs)` uses an absolute loop deadline;
 - decorating an async function protects each invocation;
 - `status()` returns `BulkheadStatus`;
 - `capacity_report()` returns an immutable `CapacityReport`;
@@ -56,7 +58,9 @@ Methods:
 - `remove_event_handler(handler)` removes an observer by identity.
 
 An instance binds to the first event loop that uses it. Per-call limits cannot
-extend the configured `wait_limit` and apply only to waiting-room time.
+extend the configured `wait_limit` and apply only to waiting-room time. Absolute deadlines
+use `asyncio.get_running_loop().time()` and also apply only to admission. A past deadline
+raises `BulkheadQueueTimeoutError` without entering the FIFO queue.
 
 `wait_closed()` may be started before `close()` and completes only after the bulkhead
 is closed and has no active work. Cancelling one waiter does not cancel active work or

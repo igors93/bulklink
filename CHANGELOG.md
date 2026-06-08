@@ -6,6 +6,20 @@ All notable changes to Bulklink will be documented in this file.
 
 No changes yet.
 
+## 0.3.0 - 2026-06-08
+
+### Added
+
+- `slot_before(deadline)` and `execute_before(deadline, operation, ...)` for admission
+  bounded by an absolute `asyncio` event-loop deadline.
+- `BulkheadStatus.expired_before_queue_total` for attempts rejected because their
+  absolute deadline had already elapsed before queue entry.
+
+### Changed
+
+- `BulkheadStatus.rejected_total` now includes pre-queue deadline expirations.
+- Installed-wheel release verification now exercises absolute-deadline admission.
+
 ## 0.2.0 - 2026-06-08
 
 ### Changed

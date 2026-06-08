@@ -63,3 +63,19 @@ async def test_execute_within_requires_a_positive_finite_number(value: object) -
 
 async def asyncio_noop() -> None:
     return None
+
+
+@pytest.mark.parametrize("value", [True, math.inf, -math.inf, math.nan, "1", None])
+def test_slot_before_requires_a_finite_number(value: object) -> None:
+    gate = AsyncBulkhead(label="deadline-validation", parallelism=1)
+
+    with pytest.raises(ValueError):
+        gate.slot_before(value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [True, math.inf, -math.inf, math.nan, "1", None])
+async def test_execute_before_requires_a_finite_number(value: object) -> None:
+    gate = AsyncBulkhead(label="execute-deadline-validation", parallelism=1)
+
+    with pytest.raises(ValueError):
+        await gate.execute_before(value, asyncio_noop)  # type: ignore[arg-type]

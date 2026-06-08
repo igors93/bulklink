@@ -81,6 +81,7 @@ def test_public_immutable_record_fields_are_stable() -> None:
         "queued_total",
         "saturated_total",
         "expired_total",
+        "expired_before_queue_total",
         "cancelled_while_waiting_total",
         "closed_before_queue_total",
         "closed_while_waiting_total",
@@ -159,6 +160,17 @@ def test_primary_calling_conventions_are_stable() -> None:
     assert _parameter_contract(AsyncBulkhead.slot_within) == (
         ("self", inspect.Parameter.POSITIONAL_ONLY),
         ("wait_limit", inspect.Parameter.POSITIONAL_ONLY),
+    )
+    assert _parameter_contract(AsyncBulkhead.execute_before) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("deadline", inspect.Parameter.POSITIONAL_ONLY),
+        ("operation", inspect.Parameter.POSITIONAL_ONLY),
+        ("args", inspect.Parameter.VAR_POSITIONAL),
+        ("kwargs", inspect.Parameter.VAR_KEYWORD),
+    )
+    assert _parameter_contract(AsyncBulkhead.slot_before) == (
+        ("self", inspect.Parameter.POSITIONAL_ONLY),
+        ("deadline", inspect.Parameter.POSITIONAL_ONLY),
     )
     assert _parameter_contract(AsyncBulkhead.resize) == (
         ("self", inspect.Parameter.POSITIONAL_ONLY),

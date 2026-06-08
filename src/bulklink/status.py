@@ -20,6 +20,7 @@ class BulkheadStatus:
     queued_total: int
     saturated_total: int
     expired_total: int
+    expired_before_queue_total: int
     cancelled_while_waiting_total: int
     closed_before_queue_total: int
     closed_while_waiting_total: int
@@ -80,7 +81,12 @@ class BulkheadStatus:
     @property
     def rejected_total(self) -> int:
         """Return all operations rejected by capacity, deadline, or closing."""
-        return self.saturated_total + self.expired_total + self.closed_total
+        return (
+            self.saturated_total
+            + self.expired_total
+            + self.expired_before_queue_total
+            + self.closed_total
+        )
 
     @property
     def settled_waiting_total(self) -> int:

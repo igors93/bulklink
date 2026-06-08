@@ -26,12 +26,20 @@ def require_non_negative_integer(name: str, value: int) -> int:
     return value
 
 
+def require_finite_number(name: str, value: float) -> float:
+    """Return a finite float."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite number")
+    converted = float(value)
+    if not math.isfinite(converted):
+        raise ValueError(f"{name} must be a finite number")
+    return converted
+
+
 def require_positive_number(name: str, value: float) -> float:
     """Return a positive finite float."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{name} must be a positive finite number")
-    converted = float(value)
-    if converted <= 0 or not math.isfinite(converted):
+    converted = require_finite_number(name, value)
+    if converted <= 0:
         raise ValueError(f"{name} must be a positive finite number")
     return converted
 

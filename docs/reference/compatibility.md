@@ -5,9 +5,9 @@ each supported version, with additional Windows and macOS validation. Release
 verification installs the built wheel into a clean virtual environment and checks its
 public typing and runtime contracts.
 
-## Stable `0.2.x` contract
+## Stable `0.3.x` contract
 
-Starting with `0.2.0`, patch releases preserve the documented public contract:
+Starting with `0.3.0`, patch releases preserve the documented public contract:
 
 - names and order exported by `bulklink.__all__`;
 - values of public enums;
@@ -28,6 +28,9 @@ release-process changes needed to validate the intended contract.
 
 - bounded in-flight work;
 - bounded FIFO waiting;
+- absolute admission deadlines use the owning event loop's monotonic clock;
+- an expired absolute deadline never enters the waiting room;
+- admission deadlines never cancel work after admission;
 - no slot leaks after cancellation or exceptions;
 - no automatic retries;
 - active work is not cancelled by `close()`;

@@ -7,8 +7,9 @@ full.
 
 ## BulkheadQueueTimeoutError
 
-Raised when a queued operation exceeds `wait_limit`. It deliberately does not inherit
-from Python's `TimeoutError`.
+Raised when a queued operation exceeds its effective wait limit or when an absolute
+admission deadline has already expired. It deliberately does not inherit from Python's
+`TimeoutError`.
 
 ## BulkheadClosedError
 

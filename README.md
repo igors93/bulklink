@@ -7,7 +7,7 @@
 Bulklink is a small, typed, zero-dependency library for bulkhead isolation and
 bounded concurrency in Python `asyncio` applications.
 
-Current package version: **0.2.0**. The documented `0.2.x` public contract is stable.
+Current package version: **0.3.0**. The documented `0.3.x` public contract is stable.
 
 </div>
 
@@ -65,6 +65,20 @@ Use a shorter limit for one call without extending the bulkhead default:
 result = await payments.execute_within(0.25, payment_api.send, order)
 ```
 
+Respect an absolute request deadline measured with the event-loop clock:
+
+```python
+loop = asyncio.get_running_loop()
+result = await payments.execute_before(
+    loop.time() + 0.25,
+    payment_api.send,
+    order,
+)
+```
+
+The deadline limits admission only. Once admitted, Bulklink does not cancel the protected
+operation when the deadline passes.
+
 Or decorate an async function:
 
 ```python
@@ -84,7 +98,8 @@ For each bulkhead:
 5. exceptions and task cancellation release capacity safely;
 6. `close()` rejects queued and future operations without interrupting active work;
 7. `wait_closed()` waits until all active operations have released their slots;
-8. `resize()` changes capacity without cancelling active work or bypassing FIFO order.
+8. `resize()` changes capacity without cancelling active work or bypassing FIFO order;
+9. `execute_before()` rejects work whose absolute admission deadline has expired.
 
 ## Graceful shutdown
 

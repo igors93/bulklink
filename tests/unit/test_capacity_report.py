@@ -295,6 +295,20 @@ def test_report_ratios_are_zero_without_history() -> None:
     assert report.longest_wait_limit_ratio is None
 
 
+def test_pre_queue_deadline_expiration_is_not_reported_as_capacity_pressure() -> None:
+    report = assess_capacity(
+        make_status(expired_before_queue_total=100),
+        wait_limit=1.0,
+        assessed_at=1.0,
+    )
+
+    assert report.status.rejected_total == 100
+    assert report.capacity_decisions_total == 0
+    assert report.capacity_rejected_total == 0
+    assert report.rejection_ratio == 0.0
+    assert report.findings == ()
+
+
 def test_capacity_contract_contains_no_operation_data() -> None:
     finding_fields = {field.name for field in dataclasses.fields(CapacityFinding)}
     report_fields = {field.name for field in dataclasses.fields(CapacityReport)}
@@ -317,6 +331,7 @@ def make_status(**overrides: object) -> BulkheadStatus:
         "queued_total": 0,
         "saturated_total": 0,
         "expired_total": 0,
+        "expired_before_queue_total": 0,
         "cancelled_while_waiting_total": 0,
         "closed_before_queue_total": 0,
         "closed_while_waiting_total": 0,

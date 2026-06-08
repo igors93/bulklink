@@ -91,6 +91,14 @@ class AsyncBulkhead:
             release=self._coordinator.release,
         )
 
+    def slot_before(self, deadline: float, /) -> SlotContext:
+        """Return a context manager that must be admitted before an absolute deadline."""
+        validated = self._coordinator.validated_deadline(deadline)
+        return SlotContext(
+            admit=lambda: self._coordinator.enter_before(validated),
+            release=self._coordinator.release,
+        )
+
     async def execute(
         self,
         operation: Callable[P, Awaitable[T]],
@@ -121,6 +129,18 @@ class AsyncBulkhead:
     ) -> T:
         """Execute one async callable using a shorter per-call queue wait limit."""
         async with self.slot_within(wait_limit):
+            return await operation(*args, **kwargs)
+
+    async def execute_before(
+        self,
+        deadline: float,
+        operation: Callable[P, Awaitable[T]],
+        /,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        """Execute one async callable only after admission before an absolute deadline."""
+        async with self.slot_before(deadline):
             return await operation(*args, **kwargs)
 
     def __call__(

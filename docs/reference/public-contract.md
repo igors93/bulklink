@@ -1,6 +1,6 @@
 # Stable public contract
 
-This document records the compatibility surface promoted with Bulklink `0.2.0`. The
+This document records the compatibility surface promoted with Bulklink `0.3.0`. The
 repository enforces the same contract with automated tests and installed-wheel release
 verification.
 
@@ -23,7 +23,7 @@ The protected enums are:
 
 ## Immutable records
 
-The fields of these frozen dataclasses are protected for `0.2.x` patch compatibility:
+The fields of these frozen dataclasses are protected for `0.3.x` patch compatibility:
 
 - `BulkheadStatus`;
 - `BulkheadEvent`;
@@ -44,10 +44,14 @@ generic network-timeout retry policies from treating local overload as a remote 
 
 The constructor and primary methods preserve their documented positional-only,
 keyword-only, variadic, and regular parameters. This includes admission methods,
-per-call wait limits, resize, shutdown, and registry creation.
+relative and absolute per-call limits, resize, shutdown, and registry creation.
+
+`slot_before(deadline)` and `execute_before(deadline, ...)` use the owning event loop's
+monotonic clock. They constrain admission only and do not cancel a protected operation
+after it has started.
 
 ## Evolution before 1.0
 
-The `0.2.x` patch line is stable. A later minor release may add or intentionally revise
+The `0.3.x` patch line is stable. A later minor release may add or intentionally revise
 pre-1.0 APIs, but changes must be explicit, tested, and documented. Runtime dependencies
 remain zero unless a future design review demonstrates a compelling need.

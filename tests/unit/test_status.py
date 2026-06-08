@@ -29,6 +29,7 @@ async def test_initial_status() -> None:
     assert current.queue_utilization == 0.0
     assert current.direct_admitted_total == 0
     assert current.closed_total == 0
+    assert current.expired_before_queue_total == 0
     assert current.rejected_total == 0
     assert current.settled_waiting_total == 0
     assert current.average_wait_seconds == 0.0

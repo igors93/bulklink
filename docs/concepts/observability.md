@@ -111,3 +111,10 @@ documented thresholds. Reports are useful for human diagnostics, while status va
 and lifecycle events remain the preferred inputs for application-specific monitoring.
 
 See [Capacity diagnostics](capacity-diagnostics.md).
+
+
+## Absolute deadline expiration
+
+An absolute deadline that has already elapsed emits `EXPIRED` with `from_queue=False`
+and `waited_seconds=0.0`. Expiration after queue entry emits the same kind with
+`from_queue=True` and the measured queue wait.

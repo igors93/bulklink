@@ -34,6 +34,7 @@ async def assert_bulkhead_consistent(bulkhead: Any) -> None:
             counters.queued_total,
             counters.saturated_total,
             counters.expired_total,
+            counters.expired_before_queue_total,
             counters.cancelled_while_waiting_total,
             counters.closed_before_queue_total,
             counters.closed_while_waiting_total,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from bulklink import (
     AsyncBulkhead,
     BulkheadEvent,
@@ -29,6 +31,10 @@ async def consume_public_api() -> None:
     direct: str = await gate.execute(render, 1)
     immediate: str = await gate.execute_now(render, 2)
     limited: str = await gate.execute_within(0.5, render, 3)
+    loop = asyncio.get_running_loop()
+    deadline_limited: str = await gate.execute_before(loop.time() + 1.0, render, 4)
+    async with gate.slot_before(loop.time() + 1.0):
+        slot_deadline_result: str = await render(5)
     decorated = gate(render)
     decorated_result: str = await decorated(4)
 
@@ -47,6 +53,8 @@ async def consume_public_api() -> None:
         direct,
         immediate,
         limited,
+        deadline_limited,
+        slot_deadline_result,
         decorated_result,
         status,
         report,
