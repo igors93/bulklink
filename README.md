@@ -2,6 +2,14 @@
 
 # Bulklink
 
+[![CI](https://img.shields.io/github/actions/workflow/status/igors93/bulklink/ci.yml?label=CI)](https://github.com/igors93/bulklink/actions)
+[![PyPI](https://img.shields.io/pypi/v/bulklink?label=pypi)](https://pypi.org/project/bulklink/)
+[![Python](https://img.shields.io/pypi/pyversions/bulklink?label=python)](https://pypi.org/project/bulklink/)
+[![Status](https://img.shields.io/pypi/status/bulklink?label=status)](https://pypi.org/project/bulklink/)
+[![Typing](https://img.shields.io/badge/typing-typed-blue)](https://pypi.org/project/bulklink/)
+[![Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)](https://pypi.org/project/bulklink/)
+[![License](https://img.shields.io/pypi/l/bulklink?label=license)](https://github.com/igors93/bulklink/blob/main/LICENSE)
+
 **Simple admission control. Strong isolation. Predictable behavior under load.**
 
 Bulklink is a small, typed, zero-dependency library for bulkhead isolation and
